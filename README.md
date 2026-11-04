@@ -17,7 +17,7 @@ Aplikasi web + MCP server untuk generate dan edit gambar kebutuhan **Kantor AI T
 - Style Guide visual (`data/style.txt`) otomatis ditambahkan ke prompt.
 
 ## Mulai cepat
-Butuh Node.js 20.12+.
+Butuh Node.js 22.13+ (database memakai node:sqlite bawaan).
 
 ```bash
 npm install

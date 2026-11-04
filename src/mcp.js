@@ -150,12 +150,17 @@ export function buildMcpServer() {
     }),
   );
 
+  // Style Guide tersimpan di database. Claude bisa mengelolanya langsung lewat MCP (tanpa browser).
+  const ACTOR = 'claude (MCP)';
   server.registerTool(
     'list_style_guides',
-    { description: 'Daftar Style Guide visual (gaya dasar + gaya per content pillar). Pakai namanya di parameter `style` pada generate_image/edit_image.', inputSchema: {} },
+    { description: 'Daftar Style Guide visual (gaya dasar + gaya per content pillar) dari database. Pakai namanya di parameter `style` pada generate_image/edit_image.', inputSchema: {} },
     wrap(async () => {
       const all = styles.list();
-      return { content: [text(all.length ? all.map((x) => `${x.base ? '[DASAR] ' : ''}${x.name}${x.pillar ? ` | pilar: ${x.pillar}` : ''} | ${x.text.slice(0, 100)}${x.text.length > 100 ? '…' : ''}`).join('\n') : 'Belum ada Style Guide. Owner dapat membuatnya di Dashboard > Style Guide.')] };
+      const gone = styles.deletedNames();
+      const line = (x) => `${x.base ? '[DASAR] ' : ''}${x.name}${x.pillar ? ` | pilar: ${x.pillar}` : ''} | diubah ${x.updatedAt.slice(0, 16).replace('T', ' ')} UTC oleh ${x.updatedBy} | ${x.text.slice(0, 100)}${x.text.length > 100 ? '…' : ''}`;
+      const body = all.length ? all.map(line).join('\n') : 'Belum ada Style Guide. Owner dapat membuatnya di Dashboard > Style Guide, atau Claude lewat set_style_guide.';
+      return { content: [text(body + (gone.length ? `\nDihapus (bisa dipulihkan dengan restore_style_guide): ${gone.join(', ')}` : ''))] };
     }),
   );
 
@@ -165,22 +170,55 @@ export function buildMcpServer() {
     wrap(async ({ name }) => {
       const all = styles.list();
       const s = name ? styles.find(name, all) : styles.getBase(all);
-      return { content: [text(s ? `${s.name}${s.pillar ? ` (pilar: ${s.pillar})` : ''}\n${s.text || '(kosong)'}` : name ? `Style "${name}" tidak ditemukan.` : '(gaya dasar belum diisi)')] };
+      return { content: [text(s ? `${s.name}${s.pillar ? ` (pilar: ${s.pillar})` : ''}${s.base ? ' [DASAR]' : ''}\n${s.text || '(kosong)'}` : name ? `Style "${name}" tidak ditemukan.` : '(gaya dasar belum diisi)')] };
     }),
   );
 
   server.registerTool(
     'set_style_guide',
     {
-      description: 'Tambah atau ubah satu Style Guide berdasarkan nama (biasanya oleh Kenzo, disetujui Owner). Tidak bisa menghapus (hanya Owner di dashboard). Tanpa `name` = ubah gaya dasar.',
-      inputSchema: { text: z.string().max(4000), name: z.string().max(60).optional(), pillar: z.string().max(60).optional() },
+      description: 'Tambah atau ubah satu Style Guide berdasarkan nama (upsert). Tersimpan di database dengan riwayat revisi, jadi bisa dikembalikan. Tanpa `name` = ubah gaya dasar. `base=true` menjadikannya gaya dasar (yang selalu dipakai). Perubahan gaya dasar memengaruhi semua gambar: pastikan sudah disetujui Owner.',
+      inputSchema: { text: z.string().max(4000), name: z.string().max(60).optional(), pillar: z.string().max(60).optional(), base: z.boolean().optional() },
     },
-    wrap(async ({ text: t, name, pillar }) => {
+    wrap(async ({ text: t, name, pillar, base }) => {
       const all = styles.list();
       const existing = name ? styles.find(name, all) : styles.getBase(all);
-      if (existing) styles.update(existing.id, { text: t, ...(pillar !== undefined ? { pillar } : {}) });
-      else styles.create({ name: name || 'Gaya dasar', text: t, pillar, base: !name });
-      return { content: [text(`Style guide "${existing?.name || name || 'Gaya dasar'}" disimpan.`)] };
+      const patch = { text: t, ...(pillar !== undefined ? { pillar } : {}), ...(base !== undefined ? { base } : {}) };
+      const saved = existing ? styles.update(existing.id, patch, ACTOR) : styles.create({ name: name || 'Gaya dasar', ...patch, base: base ?? !name }, ACTOR);
+      return { content: [text(`Style guide "${saved.name}" ${existing ? 'diperbarui' : 'dibuat'}${saved.base ? ' (gaya dasar)' : ''}. Riwayat tersimpan; lihat style_guide_history.`)] };
+    }),
+  );
+
+  server.registerTool(
+    'delete_style_guide',
+    {
+      description: 'Hapus satu Style Guide (hapus lunak: masih bisa dipulihkan dengan restore_style_guide). Aturan kantor: penghapusan butuh persetujuan Owner, jadi isi approved=true HANYA setelah Owner (Aditya) menyetujui.',
+      inputSchema: { name: z.string(), approved: z.boolean().optional() },
+    },
+    wrap(async ({ name, approved }) => {
+      const s = styles.find(name);
+      if (!s) throw new Error(`Style "${name}" tidak ditemukan`);
+      if (!approved) throw new Error(`Menghapus "${s.name}" butuh persetujuan Owner (Aditya). Minta persetujuan, lalu ulangi dengan approved=true.`);
+      styles.remove(s.id, ACTOR);
+      return { content: [text(`Style "${s.name}" dihapus (lunak). Pulihkan dengan restore_style_guide.`)] };
+    }),
+  );
+
+  server.registerTool(
+    'style_guide_history',
+    { description: 'Riwayat perubahan satu Style Guide (siapa, kapan, isi). Pakai revision id untuk restore_style_guide.', inputSchema: { name: z.string(), limit: z.number().int().min(1).max(50).optional() } },
+    wrap(async ({ name, limit }) => ({
+      content: [text(styles.history(name, limit ?? 10).map((r) => `rev ${r.id} | ${r.at.slice(0, 16).replace('T', ' ')} UTC | ${r.action} oleh ${r.actor} | ${r.name} | ${r.text.slice(0, 120)}${r.text.length > 120 ? '…' : ''}`).join('\n'))],
+    })),
+  );
+
+  server.registerTool(
+    'restore_style_guide',
+    { description: 'Pulihkan Style Guide yang dihapus (isi name), atau kembalikan isi ke revisi tertentu (isi revision_id dari style_guide_history).', inputSchema: { name: z.string().optional(), revision_id: z.number().int().optional() } },
+    wrap(async ({ name, revision_id }) => {
+      if (name === undefined && revision_id === undefined) throw new Error('Isi name atau revision_id');
+      const s = styles.restore({ ref: name, revisionId: revision_id }, ACTOR);
+      return { content: [text(`Style "${s.name}" dipulihkan.`)] };
     }),
   );
 

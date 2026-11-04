@@ -463,3 +463,63 @@ test('Style Guide jamak: dasar + per pilar, tambah/ubah/hapus, dipakai di prompt
   assert.equal(del.status, 200);
   assert.equal((await api('DELETE', `/api/styles/${ngopi.id}`)).status, 404);
 });
+
+test('Style Guide di database SQLite: Claude kelola lewat MCP, hapus butuh approved, bisa dipulihkan, riwayat tercatat', async () => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 't', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(appBase + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer rahasia' } } }));
+  const call = async (name, args) => { const r = await client.callTool({ name, arguments: args }); return { err: r.isError, text: r.content[0].text }; };
+  assert.ok(existsSync(join(process.env.DATA_DIR, 'studio.db')), 'database dibuat');
+
+  const made = await call('set_style_guide', { name: 'Promo Gajian', pillar: 'Kabar Pasar', text: 'VERSI-1 tanggal gajian, warna merah-krem' });
+  assert.ok(!made.err, made.text);
+  await call('set_style_guide', { name: 'Promo Gajian', text: 'VERSI-2 lebih kalem' });
+  assert.match((await call('get_style_guide', { name: 'Promo Gajian' })).text, /VERSI-2/);
+  assert.match((await call('list_style_guides', {})).text, /Promo Gajian .*oleh claude \(MCP\)|Promo Gajian \| pilar: Kabar Pasar \| diubah .* oleh claude \(MCP\)/);
+
+  // riwayat + kembalikan ke revisi lama
+  const hist = (await call('style_guide_history', { name: 'Promo Gajian' })).text;
+  assert.match(hist, /create oleh claude \(MCP\)/);
+  const v1 = hist.split('\n').find((l) => l.includes('VERSI-1')).match(/^rev (\d+)/)[1];
+  assert.ok(!(await call('restore_style_guide', { revision_id: Number(v1) })).err);
+  assert.match((await call('get_style_guide', { name: 'Promo Gajian' })).text, /VERSI-1/);
+
+  // menghapus: butuh persetujuan Owner; hapus lunak; bisa dipulihkan
+  const noAppr = await call('delete_style_guide', { name: 'Promo Gajian' });
+  assert.equal(noAppr.err, true);
+  assert.match(noAppr.text, /persetujuan Owner/);
+  assert.match((await call('get_style_guide', { name: 'Promo Gajian' })).text, /VERSI-1/, 'belum terhapus');
+  assert.ok(!(await call('delete_style_guide', { name: 'Promo Gajian', approved: true })).err);
+  assert.match((await call('get_style_guide', { name: 'Promo Gajian' })).text, /tidak ditemukan/);
+  assert.match((await call('list_style_guides', {})).text, /Dihapus .*Promo Gajian/);
+  const gen = await client.callTool({ name: 'generate_image', arguments: { prompt: 'x style hilang', style: 'Promo Gajian', model: models.data.find((m) => m.id.endsWith(':free')).id } });
+  assert.equal(gen.isError, true, 'style terhapus tidak bisa dipakai');
+  assert.ok(!(await call('restore_style_guide', { name: 'Promo Gajian' })).err);
+  assert.match((await call('get_style_guide', { name: 'Promo Gajian' })).text, /VERSI-1/);
+
+  // Claude menjadikan style sebagai gaya dasar -> tetap hanya satu dasar
+  await call('set_style_guide', { name: 'Promo Gajian', text: 'VERSI-1 tanggal gajian, warna merah-krem', base: true });
+  const web = (await (await fetch(appBase + '/api/styles', { headers: H })).json()).styles;
+  assert.deepEqual(web.filter((x) => x.base).map((x) => x.name), ['Promo Gajian']);
+  assert.equal(web.find((x) => x.name === 'Promo Gajian').updatedBy, 'claude (MCP)');
+  await client.close();
+});
+
+test('Style Guide: data lama (styles.json dan style.txt) dimigrasi ke database sekali jalan', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { mkdirSync } = await import('node:fs');
+  const run = (dir) => spawnSync(process.execPath, ['--no-warnings', '--input-type=module', '-e',
+    `const s = await import(${JSON.stringify(new URL('../src/styles.js', import.meta.url).href)}); console.log(JSON.stringify(s.list().map(x => [x.name, x.text, x.base])));`],
+  { env: { ...process.env, DATA_DIR: dir }, encoding: 'utf8' });
+  const d1 = mkdtempSync(join(tmpdir(), 'mig1-'));
+  writeFileSync(join(d1, 'style.txt'), 'gaya lama satu');
+  assert.deepEqual(JSON.parse(run(d1).stdout), [['Gaya dasar', 'gaya lama satu', true]]);
+  assert.deepEqual(JSON.parse(run(d1).stdout), [['Gaya dasar', 'gaya lama satu', true]], 'jalan kedua tidak menggandakan');
+  const d2 = mkdtempSync(join(tmpdir(), 'mig2-'));
+  mkdirSync(d2, { recursive: true });
+  writeFileSync(join(d2, 'styles.json'), JSON.stringify({ styles: [{ id: 'a1', name: 'Ngopi Dulu', pillar: 'Ngopi Dulu', text: 'T1', base: false }, { id: 'a2', name: 'Dasar', text: 'T2', base: true }] }));
+  const out = JSON.parse(run(d2).stdout);
+  assert.deepEqual(out, [['Dasar', 'T2', true], ['Ngopi Dulu', 'T1', false]]);
+  assert.ok(existsSync(join(d2, 'styles.json.migrated')));
+});

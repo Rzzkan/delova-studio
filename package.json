@@ -5,12 +5,12 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=20.12"
+    "node": ">=22.13"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "mcp:stdio": "node src/stdio.js",
-    "test": "node --test --test-force-exit --test-timeout=120000",
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "mcp:stdio": "node --disable-warning=ExperimentalWarning src/stdio.js",
+    "test": "node --test --test-force-exit",
     "build:css": "tailwindcss -c tailwind.config.cjs -i assets/input.css -o public/tailwind.css --minify"
   },
   "license": "UNLICENSED",

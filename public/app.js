@@ -303,7 +303,8 @@ function renderStyleList() {
     const n = document.createElement('span'); n.className = 'min-w-0 flex-1 truncate font-medium text-bodydark dark:text-white'; n.textContent = st.name; top.append(n);
     if (st.base) top.append(Object.assign(document.createElement('span'), { className: 'rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-white', textContent: 'Dasar' }));
     const sub = document.createElement('div'); sub.className = 'mt-1 line-clamp-2 text-xs'; sub.textContent = st.text || '(belum ada teks)';
-    b.append(top, sub); b.onclick = () => editStyle(st);
+    const by = document.createElement('div'); by.className = 'mt-1 text-[10px] opacity-70'; by.textContent = `Diubah ${new Date(st.updatedAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} oleh ${st.updatedBy === 'web' ? 'Anda (web)' : st.updatedBy}`;
+    b.append(top, sub, by); b.onclick = () => editStyle(st);
     return b;
   });
   $('#st-list').replaceChildren(...rows);

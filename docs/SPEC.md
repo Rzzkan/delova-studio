@@ -35,9 +35,9 @@ Satu tempat untuk generate/edit gambar kebutuhan konten Teman Seller, bisa dipak
 - Log pemanggilan: `data/attempts.jsonl` (waktu, model, hasil, durasi, cadangan dari, pesan galat; tanpa prompt dan tanpa key), dipangkas otomatis, tampil di Konfigurasi dan `GET /api/logs`.
 
 ## Style Guide jamak
-- Satu **gaya dasar** (selalu ditambahkan jika Style Guide aktif) + banyak gaya per content pillar/kebutuhan, dipilih saat generate (web: dropdown; MCP: parameter `style`). Disimpan di `data/styles.json`; `data/style.txt` lama dimigrasi otomatis jadi gaya dasar.
+- Satu **gaya dasar** (selalu ditambahkan jika Style Guide aktif) + banyak gaya per content pillar/kebutuhan, dipilih saat generate (web: dropdown; MCP: parameter `style`). Disimpan di database SQLite `data/studio.db` (`node:sqlite` bawaan Node >= 22.13, tanpa dependensi), lengkap dengan riwayat revisi (siapa, kapan, isi). `styles.json`/`style.txt` lama dimigrasi otomatis sekali jalan.
 - Tombol "Buat dari 7 Content Pillar" menambah draf arah visual untuk 7 pilar (tidak menimpa yang ada). Draf perlu disetujui Owner.
-- MCP: `list_style_guides`, `get_style_guide(name?)`, `set_style_guide(name?, text, pillar?)` (tambah/ubah saja). Hapus hanya lewat dashboard.
+- Claude mengelola Style Guide penuh lewat MCP tanpa browser: `list_style_guides`, `get_style_guide`, `set_style_guide` (tambah/ubah, `base=true` untuk gaya dasar), `style_guide_history`, `restore_style_guide` (pulihkan yang dihapus atau kembalikan ke revisi), `delete_style_guide` (hapus lunak; butuh `approved=true` setelah Owner setuju). Perubahan Claude tercatat sebagai "claude (MCP)" dan terlihat di dashboard.
 - Model gratis (Rp0) tidak terhalang batas budget.
 
 ## Di luar cakupan v0.1

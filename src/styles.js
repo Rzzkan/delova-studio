@@ -1,11 +1,11 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, renameSync, mkdirSync, existsSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { config } from './config.js';
 
 // Banyak Style Guide: satu "gaya dasar" (selalu dipakai jika Style Guide aktif) + gaya per content pillar/kebutuhan
-// yang dipilih saat generate. Disimpan di data/styles.json. Berkas lama data/style.txt dimigrasi jadi gaya dasar.
-const file = () => join(config.dataDir, 'styles.json');
+// yang dipilih saat generate. Disimpan di database SQLite (data/studio.db) lengkap dengan riwayat revisi.
 const MAX_STYLES = 30, MAX_TEXT = 4000;
 
 const bad = (msg, status = 400) => Object.assign(new Error(msg), { status });
@@ -21,31 +21,81 @@ export const PILLAR_DRAFTS = [
   ['Dari Meja Teman Seller', 'Maskot orisinal Teman Seller menunjuk layar alat yang sederhana dan generik, nuansa praktis dan ramah. Palet brand, latar bersih. Jangan menggambar fitur, harga, atau angka tertentu. Tanpa teks di gambar.'],
 ];
 
-function read() {
-  try {
-    const d = JSON.parse(readFileSync(file(), 'utf8'));
-    if (Array.isArray(d.styles)) return d.styles;
-  } catch { /* belum ada */ }
-  const legacy = join(config.dataDir, 'style.txt');
-  if (existsSync(legacy)) {
-    const text = readFileSync(legacy, 'utf8').trim();
-    if (text) return [{ id: randomUUID(), name: 'Gaya dasar', pillar: '', text, base: true, updatedAt: new Date().toISOString() }];
-  }
-  return [];
-}
-function write(styles) {
+// ---- Database SQLite (node:sqlite bawaan Node 22, tanpa dependensi). File: data/studio.db ----
+let cached;
+function db() {
+  const path = join(config.dataDir, 'studio.db');
+  if (cached?.path === path) return cached.db;
   mkdirSync(config.dataDir, { recursive: true });
-  writeFileSync(file() + '.tmp', JSON.stringify({ styles }, null, 2));
-  renameSync(file() + '.tmp', file());
-  return styles;
+  const d = new DatabaseSync(path);
+  d.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA busy_timeout = 5000;
+    CREATE TABLE IF NOT EXISTS styles (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, pillar TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '',
+      base INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, updated_by TEXT NOT NULL DEFAULT 'web', deleted_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS styles_name_live ON styles (lower(name)) WHERE deleted_at IS NULL;
+    CREATE TABLE IF NOT EXISTS style_revisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, style_id TEXT NOT NULL, name TEXT NOT NULL, pillar TEXT NOT NULL, text TEXT NOT NULL,
+      base INTEGER NOT NULL, action TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS rev_style ON style_revisions (style_id, id);
+  `);
+  cached = { path, db: d };
+  migrate(d);
+  return d;
 }
 
-export const list = () => read();
-export function find(ref, styles = read()) {
-  const r = String(ref ?? '').trim().toLowerCase();
-  return r ? styles.find((s) => s.id === ref || s.name.toLowerCase() === r) : undefined;
+// Sekali jalan: impor dari styles.json (versi sebelumnya) atau style.txt (versi paling awal) jika tabel masih kosong.
+function migrate(d) {
+  if (d.prepare('SELECT COUNT(*) AS n FROM styles').get().n > 0) return;
+  let rows = [];
+  const json = join(config.dataDir, 'styles.json');
+  const legacy = join(config.dataDir, 'style.txt');
+  try { rows = JSON.parse(readFileSync(json, 'utf8')).styles || []; } catch { /* tidak ada */ }
+  if (!rows.length && existsSync(legacy)) {
+    const text = readFileSync(legacy, 'utf8').trim();
+    if (text) rows = [{ id: randomUUID(), name: 'Gaya dasar', pillar: '', text, base: true }];
+  }
+  for (const r of rows) {
+    insert(d, { id: r.id || randomUUID(), name: r.name, pillar: r.pillar || '', text: r.text || '', base: r.base ? 1 : 0 }, 'import', 'migrasi', r.updatedAt);
+  }
+  if (rows.length && existsSync(json)) { try { renameSync(json, json + '.migrated'); } catch { /* abaikan */ } }
 }
-export const getBase = (styles = read()) => styles.find((s) => s.base);
+
+const now = () => new Date().toISOString();
+const toStyle = (r) => ({ id: r.id, name: r.name, pillar: r.pillar, text: r.text, base: Boolean(r.base), updatedAt: r.updated_at, updatedBy: r.updated_by });
+
+function snapshot(d, r, action, actor) {
+  d.prepare('INSERT INTO style_revisions (style_id, name, pillar, text, base, action, actor, at) VALUES (?,?,?,?,?,?,?,?)')
+    .run(r.id, r.name, r.pillar, r.text, r.base ? 1 : 0, action, actor, now());
+}
+function insert(d, r, action, actor, at) {
+  d.prepare('INSERT INTO styles (id, name, pillar, text, base, updated_at, updated_by) VALUES (?,?,?,?,?,?,?)')
+    .run(r.id, r.name, r.pillar, r.text, r.base ? 1 : 0, at || now(), actor);
+  snapshot(d, r, action, actor);
+}
+function tx(fn) {
+  const d = db();
+  d.exec('BEGIN IMMEDIATE');
+  try { const out = fn(d); d.exec('COMMIT'); return out; } catch (e) { d.exec('ROLLBACK'); throw e; }
+}
+const liveRow = (d, id) => d.prepare('SELECT * FROM styles WHERE id = ? AND deleted_at IS NULL').get(id);
+const nameTaken = (d, name, exceptId) => Boolean(d.prepare('SELECT 1 FROM styles WHERE lower(name) = lower(?) AND deleted_at IS NULL AND id != ?').get(name, exceptId || ''));
+const setOnlyBase = (d, id, actor) => {
+  for (const o of d.prepare('SELECT * FROM styles WHERE base = 1 AND id != ? AND deleted_at IS NULL').all(id)) {
+    d.prepare('UPDATE styles SET base = 0, updated_at = ?, updated_by = ? WHERE id = ?').run(now(), actor, o.id);
+    snapshot(d, { ...o, base: 0 }, 'update', actor);
+  }
+};
+
+export const list = () => db().prepare('SELECT * FROM styles WHERE deleted_at IS NULL ORDER BY base DESC, rowid').all().map(toStyle);
+export function find(ref, styles = list()) {
+  const r = String(ref ?? '').trim().toLowerCase();
+  return r ? styles.find((x) => x.id === ref || x.name.toLowerCase() === r) : undefined;
+}
+export const getBase = (styles = list()) => styles.find((x) => x.base);
 
 function clean(p, { partial = false } = {}) {
   const out = {};
@@ -64,57 +114,89 @@ function clean(p, { partial = false } = {}) {
   if (p.base !== undefined) out.base = Boolean(p.base);
   return out;
 }
-const dupName = (styles, name, exceptId) => styles.some((s) => s.id !== exceptId && s.name.toLowerCase() === name.toLowerCase());
-function applyBase(styles, id) { styles.forEach((s) => { s.base = s.id === id; }); }
 
-export function create(p) {
-  const styles = read();
-  if (styles.length >= MAX_STYLES) throw bad(`Maksimal ${MAX_STYLES} style`);
+export function create(p, actor = 'web') {
   const c = clean(p);
-  if (dupName(styles, c.name)) throw bad(`Style "${c.name}" sudah ada`);
-  const s = { id: randomUUID(), name: c.name, pillar: c.pillar || '', text: c.text, base: false, updatedAt: new Date().toISOString() };
-  styles.push(s);
-  if (c.base) applyBase(styles, s.id);
-  write(styles);
-  return styles.find((x) => x.id === s.id);
+  return tx((d) => {
+    if (d.prepare('SELECT COUNT(*) AS n FROM styles WHERE deleted_at IS NULL').get().n >= MAX_STYLES) throw bad(`Maksimal ${MAX_STYLES} style`);
+    if (nameTaken(d, c.name)) throw bad(`Style "${c.name}" sudah ada`);
+    const r = { id: randomUUID(), name: c.name, pillar: c.pillar || '', text: c.text, base: c.base ? 1 : 0 };
+    insert(d, r, 'create', actor);
+    if (c.base) setOnlyBase(d, r.id, actor);
+    return toStyle(liveRow(d, r.id));
+  });
 }
 
-export function update(id, p) {
-  const styles = read();
-  const s = styles.find((x) => x.id === id);
-  if (!s) throw bad('Style tidak ditemukan', 404);
+export function update(id, p, actor = 'web') {
   const c = clean(p, { partial: true });
-  if (c.name !== undefined && dupName(styles, c.name, id)) throw bad(`Style "${c.name}" sudah ada`);
-  const { base, ...rest } = c;
-  Object.assign(s, rest, { updatedAt: new Date().toISOString() });
-  if (base === true) applyBase(styles, id);
-  else if (base === false) s.base = false;
-  write(styles);
-  return s;
+  return tx((d) => {
+    const cur = liveRow(d, id);
+    if (!cur) throw bad('Style tidak ditemukan', 404);
+    if (c.name !== undefined && nameTaken(d, c.name, id)) throw bad(`Style "${c.name}" sudah ada`);
+    const next = { ...cur, ...('name' in c ? { name: c.name } : {}), ...('pillar' in c ? { pillar: c.pillar } : {}), ...('text' in c ? { text: c.text } : {}), base: 'base' in c ? (c.base ? 1 : 0) : cur.base };
+    d.prepare('UPDATE styles SET name=?, pillar=?, text=?, base=?, updated_at=?, updated_by=? WHERE id=?').run(next.name, next.pillar, next.text, next.base, now(), actor, id);
+    snapshot(d, next, 'update', actor);
+    if (next.base) setOnlyBase(d, id, actor);
+    return toStyle(liveRow(d, id));
+  });
 }
 
-export function remove(id) {
-  const styles = read();
-  if (!styles.some((x) => x.id === id)) throw bad('Style tidak ditemukan', 404);
-  write(styles.filter((x) => x.id !== id));
+// Hapus lunak: baris tetap ada (deleted_at) beserta riwayatnya, bisa dipulihkan dengan restore().
+export function remove(id, actor = 'web') {
+  tx((d) => {
+    const cur = liveRow(d, id);
+    if (!cur) throw bad('Style tidak ditemukan', 404);
+    d.prepare('UPDATE styles SET deleted_at = ?, base = 0, updated_at = ?, updated_by = ? WHERE id = ?').run(now(), now(), actor, id);
+    snapshot(d, { ...cur, base: 0 }, 'delete', actor);
+  });
 }
+
+// Pulihkan style yang dihapus (berdasarkan nama atau id), atau kembalikan isi ke revisi tertentu.
+export function restore({ ref, revisionId }, actor = 'web') {
+  return tx((d) => {
+    if (revisionId !== undefined) {
+      const rev = d.prepare('SELECT * FROM style_revisions WHERE id = ?').get(Number(revisionId));
+      if (!rev) throw bad('Revisi tidak ditemukan', 404);
+      const cur = d.prepare('SELECT * FROM styles WHERE id = ?').get(rev.style_id);
+      if (!cur) throw bad('Style asal revisi tidak ada', 404);
+      if (nameTaken(d, rev.name, cur.id)) throw bad(`Nama "${rev.name}" sekarang dipakai style lain`);
+      d.prepare('UPDATE styles SET name=?, pillar=?, text=?, deleted_at=NULL, updated_at=?, updated_by=? WHERE id=?').run(rev.name, rev.pillar, rev.text, now(), actor, cur.id);
+      snapshot(d, { ...cur, name: rev.name, pillar: rev.pillar, text: rev.text }, 'restore', actor);
+      return toStyle(d.prepare('SELECT * FROM styles WHERE id = ?').get(cur.id));
+    }
+    const r = String(ref ?? '').trim().toLowerCase();
+    const row = d.prepare('SELECT * FROM styles WHERE deleted_at IS NOT NULL AND (id = ? OR lower(name) = ?) ORDER BY deleted_at DESC LIMIT 1').get(String(ref ?? ''), r);
+    if (!row) throw bad('Tidak ada style terhapus dengan nama itu', 404);
+    if (nameTaken(d, row.name, row.id)) throw bad(`Sudah ada style aktif bernama "${row.name}"`);
+    d.prepare('UPDATE styles SET deleted_at = NULL, updated_at = ?, updated_by = ? WHERE id = ?').run(now(), actor, row.id);
+    snapshot(d, row, 'restore', actor);
+    return toStyle(d.prepare('SELECT * FROM styles WHERE id = ?').get(row.id));
+  });
+}
+
+export function history(ref, limit = 20) {
+  const d = db();
+  const r = String(ref ?? '').trim().toLowerCase();
+  const row = d.prepare('SELECT id FROM styles WHERE id = ? OR lower(name) = ? ORDER BY deleted_at IS NULL DESC, updated_at DESC LIMIT 1').get(String(ref ?? ''), r);
+  if (!row) throw bad(`Style "${ref}" tidak ditemukan`, 404);
+  return d.prepare('SELECT id, name, pillar, text, base, action, actor, at FROM style_revisions WHERE style_id = ? ORDER BY id DESC LIMIT ?').all(row.id, Math.min(100, Math.max(1, limit)))
+    .map((x) => ({ ...x, base: Boolean(x.base) }));
+}
+
+export const deletedNames = () => db().prepare('SELECT name FROM styles WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 20').all().map((x) => x.name);
 
 // Tambah draf untuk 7 content pillar yang belum ada (tidak menimpa yang sudah ada).
-export function seedPillars() {
-  const styles = read();
+export function seedPillars(actor = 'web') {
   const added = [];
   for (const [name, text] of PILLAR_DRAFTS) {
-    if (dupName(styles, name)) continue;
-    const s = { id: randomUUID(), name, pillar: name, text, base: false, updatedAt: new Date().toISOString() };
-    styles.push(s); added.push(s.name);
+    try { create({ name, pillar: name, text }, actor); added.push(name); } catch (e) { if (!/sudah ada/.test(e.message)) throw e; }
   }
-  write(styles);
-  return { added, styles };
+  return { added, styles: list() };
 }
 
 // Teks yang ditambahkan ke prompt: gaya dasar + gaya terpilih (jika ada).
 export function compose(ref) {
-  const styles = read();
+  const styles = list();
   const base = getBase(styles);
   let pick;
   if (ref) {
