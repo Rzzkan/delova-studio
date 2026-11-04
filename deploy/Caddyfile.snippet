@@ -1,0 +1,8 @@
+# Jika VPS memakai Caddy: tambahkan ke Caddyfile (ganti 3410), lalu `caddy reload`
+studio.temanseller.com {
+  request_body { max_size 40MB }
+  reverse_proxy 127.0.0.1:3410 {
+    flush_interval -1
+    transport http { response_header_timeout 360s }
+  }
+}
