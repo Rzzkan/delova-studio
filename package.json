@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node src/server.js",
     "mcp:stdio": "node src/stdio.js",
-    "test": "node --test --test-force-exit"
+    "test": "node --test --test-force-exit --test-timeout=120000"
   },
   "license": "UNLICENSED",
   "dependencies": {
