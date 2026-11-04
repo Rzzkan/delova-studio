@@ -1,16 +1,17 @@
-# Pakai: HOST_PORT=<port kosong dari scripts/check-ports.sh> docker compose up -d --build
+# Pakai: docker compose up -d --build   (port host default 3400; ganti dengan HOST_PORT=<port kosong> bila perlu)
 services:
   studio:
     build: .
     container_name: teman-seller-studio
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - .env
     environment:
       PUBLIC_URL: https://studio.temanseller.com
       HOST: 0.0.0.0
       PORT: "3000"
     ports:
-      - "127.0.0.1:${HOST_PORT:?isi HOST_PORT dengan port kosong}:3000"   # hanya localhost, diakses lewat reverse proxy
+      - "127.0.0.1:${HOST_PORT:-3400}:3000"   # hanya localhost (port 3400 sudah dicek kosong), diakses lewat reverse proxy
     volumes:
       - studio-data:/app/data   # volume Docker (izin benar untuk user node); gambar dihapus otomatis tiap 7 hari
 
