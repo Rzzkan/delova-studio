@@ -43,6 +43,7 @@ function route() {
   if (page === 'dash') loadDash();
   if (page === 'budget') loadBudget();
   if (page === 'config') loadConfig();
+  if (page === 'style') loadStyles();
 }
 
 /* ---------- galeri: grid gambar + nama file + URL ---------- */
@@ -276,6 +277,68 @@ function initFallback() {
   $('#l-issues').onchange = loadLogs;
 }
 
+/* ---------- style guide jamak ---------- */
+let styleList = [], editingId = null;
+function fillStylePickers() {
+  const others = styleList.filter((x) => !x.base);
+  const opt = (v, t) => Object.assign(document.createElement('option'), { value: v, textContent: t });
+  const base = styleList.find((x) => x.base);
+  const first = base ? `Hanya gaya dasar (${base.name})` : 'Tanpa style tambahan';
+  $('#g-style-pick').replaceChildren(opt('', first), ...others.map((x) => opt(x.name, x.pillar && x.pillar !== x.name ? `${x.name} (${x.pillar})` : x.name)));
+  $('#e-style-pick').replaceChildren(opt('__none', 'Tanpa Style Guide'), opt('', first), ...others.map((x) => opt(x.name, x.name)));
+}
+function editStyle(st) {
+  editingId = st?.id || null;
+  $('#st-title').textContent = st ? `Ubah: ${st.name}` : 'Style baru';
+  $('#st-name').value = st?.name || ''; $('#st-pillar').value = st?.pillar || ''; $('#st-text').value = st?.text || ''; $('#st-base').checked = Boolean(st?.base);
+  $('#st-del').classList.toggle('hidden', !st); $('#st-msg').textContent = '';
+  renderStyleList();
+}
+function renderStyleList() {
+  const rows = styleList.map((st) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `block w-full rounded-lg border p-3 text-left text-sm hover:border-primary ${st.id === editingId ? 'border-primary' : 'border-stroke dark:border-strokedark'}`;
+    const top = document.createElement('div'); top.className = 'flex items-center gap-2';
+    const n = document.createElement('span'); n.className = 'min-w-0 flex-1 truncate font-medium text-bodydark dark:text-white'; n.textContent = st.name; top.append(n);
+    if (st.base) top.append(Object.assign(document.createElement('span'), { className: 'rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-white', textContent: 'Dasar' }));
+    const sub = document.createElement('div'); sub.className = 'mt-1 line-clamp-2 text-xs'; sub.textContent = st.text || '(belum ada teks)';
+    b.append(top, sub); b.onclick = () => editStyle(st);
+    return b;
+  });
+  $('#st-list').replaceChildren(...rows);
+  if (!rows.length) $('#st-list').textContent = 'Belum ada style. Klik "+ Style baru" atau "Buat dari 7 Content Pillar".';
+}
+async function loadStyles(keepEditing = true) {
+  const r = await api('/styles');
+  styleList = r.styles;
+  $('#st-pillars').replaceChildren(...r.pillars.map((p) => Object.assign(document.createElement('option'), { value: p })));
+  fillStylePickers();
+  const cur = keepEditing ? styleList.find((x) => x.id === editingId) : null;
+  editStyle(cur || null);
+}
+function initStyles() {
+  $('#st-new').onclick = () => editStyle(null);
+  $('#st-seed').onclick = async () => {
+    const r = await api('/styles/seed-pillars', { method: 'POST', body: '{}' });
+    $('#st-seed-msg').textContent = r.added.length ? `Ditambahkan ${r.added.length} draf pilar. Periksa dan ubah sesuai selera, lalu setujui sebagai Owner.` : 'Semua pilar sudah ada.';
+    await loadStyles();
+  };
+  $('#st-save').onclick = async () => {
+    const msg = $('#st-msg');
+    const body = { name: $('#st-name').value, pillar: $('#st-pillar').value, text: $('#st-text').value, base: $('#st-base').checked };
+    try {
+      const saved = editingId ? await api(`/styles/${editingId}`, { method: 'PUT', body: JSON.stringify(body) }) : await api('/styles', { method: 'POST', body: JSON.stringify(body) });
+      editingId = saved.id; await loadStyles(); msg.className = OK; msg.textContent = 'Tersimpan.';
+    } catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
+  $('#st-del').onclick = async () => {
+    if (!editingId || !confirm('Hapus style ini? Tidak bisa dikembalikan.')) return;
+    try { await api(`/styles/${editingId}`, { method: 'DELETE' }); editingId = null; await loadStyles(false); $('#st-msg').className = OK; $('#st-msg').textContent = 'Style dihapus.'; }
+    catch (e) { $('#st-msg').className = ERR; $('#st-msg').textContent = e.message; }
+  };
+}
+
 async function estimate(prefix) {
   const model = $(`#${prefix}-model`).value, n = $(`#${prefix}-n`).value || 1;
   if (!model) return;
@@ -341,7 +404,7 @@ async function init() {
   for (const p of ['g', 'e']) { $(`#${p}-model`).onchange = () => estimate(p); $(`#${p}-n`).oninput = () => estimate(p); estimate(p); }
   $('#g-go').onclick = () => run('g', '/generate', {
     prompt: $('#g-prompt').value, model: $('#g-model').value, n: Number($('#g-n').value) || 1, size: $('#g-size').value || undefined,
-    title: $('#g-title').value || undefined, background: $('#g-opaque').checked ? 'transparent' : undefined, useStyle: $('#g-style').checked, approved: $('#g-appr').checked,
+    title: $('#g-title').value || undefined, background: $('#g-opaque').checked ? 'transparent' : undefined, useStyle: $('#g-style').checked, style: $('#g-style-pick').value || undefined, approved: $('#g-appr').checked,
   }, '#g-out');
   $('#g-five').onclick = () => { $('#g-n').value = Math.min(5, cfg.maxN); estimate('g'); };
   $('#e-file').onchange = async (ev) => {
@@ -352,11 +415,11 @@ async function init() {
   $('#e-go').onclick = () => {
     if (!editSource) { $('#e-msg').className = ERR; $('#e-msg').textContent = 'Pilih gambar sumber dulu.'; return; }
     run('e', '/edit', { prompt: $('#e-prompt').value, model: $('#e-model').value, n: Number($('#e-n').value) || 1, title: $('#e-title').value || undefined,
-      sourceId: editSource.sourceId, imageBase64: editSource.imageBase64, approved: $('#e-appr').checked }, '#e-out');
+      sourceId: editSource.sourceId, imageBase64: editSource.imageBase64, approved: $('#e-appr').checked, useStyle: $('#e-style-pick').value !== '__none', style: ['', '__none'].includes($('#e-style-pick').value) ? undefined : $('#e-style-pick').value }, '#e-out');
   };
   $('#q').oninput = () => loadGallery();
-  $('#style').value = (await api('/style')).style;
-  $('#style-save').onclick = async () => { await api('/style', { method: 'PUT', body: JSON.stringify({ style: $('#style').value }) }); $('#style-msg').className = OK; $('#style-msg').textContent = 'Tersimpan.'; };
+  initStyles();
+  styleList = (await api('/styles')).styles; fillStylePickers();
 
   $('#budget-form').onsubmit = async (ev) => {
     ev.preventDefault();

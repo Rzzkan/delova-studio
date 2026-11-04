@@ -12,6 +12,7 @@ import { verify, signedUrl } from './share.js';
 import * as settings from './settings.js';
 import * as secrets from './secrets.js';
 import * as log from './log.js';
+import * as styles from './styles.js';
 import { COOKIE, loginEnabled, safeEqual, checkCredentials, makeToken, readToken, parseCookies, setCookie, clearCookie } from './auth.js';
 
 const fails = new Map(); // ip -> { n, until } : pembatas percobaan login
@@ -178,12 +179,11 @@ export function createApp() {
   api.get('/gallery', async (req, res, next) => {
     try { res.json(await store.listImages({ limit: Number(req.query.limit) || 60, query: req.query.q })); } catch (e) { next(e); }
   });
-  api.get('/style', async (_req, res, next) => {
-    try { res.json({ style: await store.getStyle() }); } catch (e) { next(e); }
-  });
-  api.put('/style', async (req, res, next) => {
-    try { await store.setStyle(String(req.body.style || '').slice(0, 4000)); res.json({ ok: true }); } catch (e) { next(e); }
-  });
+  api.get('/styles', (_req, res) => res.json({ styles: styles.list(), pillars: styles.PILLAR_DRAFTS.map(([n]) => n) }));
+  api.post('/styles/seed-pillars', (_req, res, next) => { try { res.json(styles.seedPillars()); } catch (e) { next(e); } });
+  api.post('/styles', (req, res, next) => { try { res.status(201).json(styles.create(req.body || {})); } catch (e) { next(e); } });
+  api.put('/styles/:id', (req, res, next) => { try { res.json(styles.update(req.params.id, req.body || {})); } catch (e) { next(e); } });
+  api.delete('/styles/:id', (req, res, next) => { try { styles.remove(req.params.id); res.json({ ok: true }); } catch (e) { next(e); } });
   app.use('/api', api);
 
   // File gambar: dilindungi token yang sama; browser memakai ?token= untuk tag <img>.

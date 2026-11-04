@@ -78,6 +78,8 @@
             <div id="g-sizes" class="mb-2 flex flex-wrap gap-2"></div>
             <input id="g-size" class="field" placeholder="1024x1024">
             <label class="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" id="g-style" checked class="h-4 w-4 accent-primary"> Pakai Style Guide Teman Seller</label>
+            <label class="lbl" for="g-style-pick">Style content pillar</label>
+            <select id="g-style-pick" class="field"></select>
             <label class="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" id="g-opaque" class="h-4 w-4 accent-primary"> Latar transparan (PNG)</label>
             <div id="g-est" class="mt-4 rounded-lg bg-graylight p-3 text-sm dark:bg-bodydark"></div>
             <label id="g-appr-wrap" hidden class="mt-3 flex items-center gap-2 rounded-lg border border-warning p-3 text-sm"><input type="checkbox" id="g-appr" class="h-4 w-4 accent-primary"> Owner (Aditya) sudah menyetujui biaya ini</label>
@@ -107,6 +109,8 @@
               <div><label class="lbl" for="e-n">Jumlah</label><input id="e-n" type="number" min="1" value="1" class="field"></div>
               <div><label class="lbl" for="e-title">Judul file</label><input id="e-title" class="field" placeholder="Edit Maskot"></div>
             </div>
+            <label class="lbl" for="e-style-pick">Style Guide</label>
+            <select id="e-style-pick" class="field"></select>
             <div id="e-est" class="mt-4 rounded-lg bg-graylight p-3 text-sm dark:bg-bodydark"></div>
             <label id="e-appr-wrap" hidden class="mt-3 flex items-center gap-2 rounded-lg border border-warning p-3 text-sm"><input type="checkbox" id="e-appr" class="h-4 w-4 accent-primary"> Owner (Aditya) sudah menyetujui biaya ini</label>
             <div class="mt-4"><button id="e-go" class="btn">Edit gambar</button></div>
@@ -209,12 +213,38 @@
 
       <!-- Style -->
       <section data-page="style" hidden>
-        <div class="card max-w-3xl">
-          <h2 class="text-base font-semibold text-bodydark dark:text-white">Style Guide visual</h2>
-          <p class="mt-1 text-sm">Teks ini otomatis ditambahkan ke prompt (warna, maskot orisinal, gaya garis). Diisi Kenzo, disetujui Owner.</p>
-          <textarea id="style" rows="7" class="field mt-4" placeholder="Contoh: flat illustration hangat, palet oranye-krem, garis tebal rapi, maskot orisinal Teman Seller, tanpa teks di gambar"></textarea>
-          <button id="style-save" class="btn mt-4">Simpan style</button>
-          <p id="style-msg" class="mt-3 text-sm"></p>
+        <div class="grid gap-6 xl:grid-cols-3">
+          <div class="card xl:col-span-1">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h2 class="text-base font-semibold text-bodydark dark:text-white">Daftar Style Guide</h2>
+                <p class="mt-1 text-sm">Satu <b>gaya dasar</b> yang selalu dipakai, ditambah gaya per content pillar yang dipilih saat generate.</p>
+              </div>
+            </div>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <button id="st-new" type="button" class="btn">+ Style baru</button>
+              <button id="st-seed" type="button" class="btn-ghost">Buat dari 7 Content Pillar</button>
+            </div>
+            <p id="st-seed-msg" class="mt-2 text-xs"></p>
+            <div id="st-list" class="mt-4 space-y-2"></div>
+          </div>
+          <div class="card xl:col-span-2">
+            <h2 id="st-title" class="text-base font-semibold text-bodydark dark:text-white">Style baru</h2>
+            <p class="mt-1 text-sm">Teks ini otomatis ditambahkan ke prompt (warna, maskot orisinal, gaya garis, suasana). Diisi Kenzo, disetujui Owner.</p>
+            <label class="lbl" for="st-name">Nama style</label>
+            <input id="st-name" class="field" maxlength="60" placeholder="Contoh: Ngopi Dulu">
+            <label class="lbl" for="st-pillar">Content pillar (opsional)</label>
+            <input id="st-pillar" class="field" maxlength="60" list="st-pillars" placeholder="Pilih atau ketik pilar">
+            <datalist id="st-pillars"></datalist>
+            <label class="lbl" for="st-text">Arahan gaya visual</label>
+            <textarea id="st-text" rows="8" maxlength="4000" class="field" placeholder="Contoh: flat illustration hangat, palet oranye-krem, garis tebal rapi, maskot orisinal Teman Seller, tanpa teks di gambar"></textarea>
+            <label class="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" id="st-base" class="h-4 w-4 accent-primary"> Jadikan gaya dasar (selalu ditambahkan jika Style Guide aktif)</label>
+            <div class="mt-4 flex flex-wrap items-center gap-3">
+              <button id="st-save" type="button" class="btn">Simpan</button>
+              <button id="st-del" type="button" class="btn-ghost hidden">Hapus style ini</button>
+            </div>
+            <p id="st-msg" class="mt-3 text-sm"></p>
+          </div>
         </div>
       </section>
 

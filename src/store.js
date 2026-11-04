@@ -6,7 +6,6 @@ import { config } from './config.js';
 
 const imagesDir = () => join(config.dataDir, 'images');
 const indexFile = () => join(config.dataDir, 'index.json');
-const styleFile = () => join(config.dataDir, 'style.txt');
 const ledgerFile = () => join(config.dataDir, 'ledger.jsonl');
 
 const EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
@@ -105,6 +104,7 @@ export function saveBatch({ images, meta }) {
         title: meta.title || null,
         size: meta.size || null,
         source: meta.source || 'web',
+        style: meta.style || null,
         // biaya dibagi rata per gambar; biaya batch dicatat di gambar pertama agar total tetap akurat
         costIdr: i === 0 ? meta.costIdr : 0,
         batch: `${prefix}_v${version}`,
@@ -147,15 +147,6 @@ export async function readImageFile(file) {
 
 export async function spentToday() {
   return (await usage()).today;
-}
-
-export async function getStyle() {
-  return existsSync(styleFile()) ? (await readFile(styleFile(), 'utf8')).trim() : '';
-}
-
-export async function setStyle(text) {
-  await init();
-  await writeFile(styleFile(), String(text || '').trim());
 }
 
 export async function countFiles() {

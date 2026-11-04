@@ -7,6 +7,7 @@ import * as service from './service.js';
 import { ApprovalRequired } from './service.js';
 import { signedUrl } from './share.js';
 import * as settings from './settings.js';
+import * as styles from './styles.js';
 
 const baseUrl = () => config.publicUrl || `http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`;
 const text = (t) => ({ type: 'text', text: t });
@@ -43,6 +44,7 @@ const common = {
   title: z.string().optional().describe('Judul singkat untuk nama file (YYYY-MM-DD_Role_Judul-Singkat_v1).'),
   role: z.string().optional().describe('Nama peran pembuat untuk nama file, default Kenzo.'),
   approved: z.boolean().optional().describe('Isi true HANYA setelah Owner (Aditya) menyetujui biaya yang melewati ambang.'),
+  style: z.string().optional().describe('Nama Style Guide per content pillar (lihat list_style_guides), ditambahkan di atas gaya dasar. Kosong = hanya gaya dasar.'),
   return_images: z.boolean().optional().describe('Kirim gambar langsung di respons (default true).'),
 };
 
@@ -149,17 +151,36 @@ export function buildMcpServer() {
   );
 
   server.registerTool(
+    'list_style_guides',
+    { description: 'Daftar Style Guide visual (gaya dasar + gaya per content pillar). Pakai namanya di parameter `style` pada generate_image/edit_image.', inputSchema: {} },
+    wrap(async () => {
+      const all = styles.list();
+      return { content: [text(all.length ? all.map((x) => `${x.base ? '[DASAR] ' : ''}${x.name}${x.pillar ? ` | pilar: ${x.pillar}` : ''} | ${x.text.slice(0, 100)}${x.text.length > 100 ? '…' : ''}`).join('\n') : 'Belum ada Style Guide. Owner dapat membuatnya di Dashboard > Style Guide.')] };
+    }),
+  );
+
+  server.registerTool(
     'get_style_guide',
-    { description: 'Baca Style Guide visual Teman Seller yang otomatis ditambahkan ke prompt.', inputSchema: {} },
-    wrap(async () => ({ content: [text((await store.getStyle()) || '(kosong)')] })),
+    { description: 'Baca isi lengkap satu Style Guide. Tanpa `name` = gaya dasar.', inputSchema: { name: z.string().optional() } },
+    wrap(async ({ name }) => {
+      const all = styles.list();
+      const s = name ? styles.find(name, all) : styles.getBase(all);
+      return { content: [text(s ? `${s.name}${s.pillar ? ` (pilar: ${s.pillar})` : ''}\n${s.text || '(kosong)'}` : name ? `Style "${name}" tidak ditemukan.` : '(gaya dasar belum diisi)')] };
+    }),
   );
 
   server.registerTool(
     'set_style_guide',
-    { description: 'Ubah Style Guide visual (biasanya oleh Kenzo, disetujui Owner).', inputSchema: { text: z.string().max(4000) } },
-    wrap(async ({ text: t }) => {
-      await store.setStyle(t);
-      return { content: [text('Style guide disimpan.')] };
+    {
+      description: 'Tambah atau ubah satu Style Guide berdasarkan nama (biasanya oleh Kenzo, disetujui Owner). Tidak bisa menghapus (hanya Owner di dashboard). Tanpa `name` = ubah gaya dasar.',
+      inputSchema: { text: z.string().max(4000), name: z.string().max(60).optional(), pillar: z.string().max(60).optional() },
+    },
+    wrap(async ({ text: t, name, pillar }) => {
+      const all = styles.list();
+      const existing = name ? styles.find(name, all) : styles.getBase(all);
+      if (existing) styles.update(existing.id, { text: t, ...(pillar !== undefined ? { pillar } : {}) });
+      else styles.create({ name: name || 'Gaya dasar', text: t, pillar, base: !name });
+      return { content: [text(`Style guide "${existing?.name || name || 'Gaya dasar'}" disimpan.`)] };
     }),
   );
 

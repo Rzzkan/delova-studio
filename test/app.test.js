@@ -195,7 +195,7 @@ test('login: halaman utama dialihkan ke /login, password salah ditolak, benar me
   const gal = await (await fetch(appBase + '/api/gallery', { headers: H })).json();
   assert.equal((await fetch(`${appBase}/files/${gal[0].file}`, { headers: { Cookie: c } })).status, 200, 'gambar bisa dibuka dengan sesi login');
   // CSRF: cookie + body non-JSON ditolak
-  const bad = await fetch(appBase + '/api/style', { method: 'PUT', headers: { Cookie: c, 'Content-Type': 'text/plain' }, body: 'x' });
+  const bad = await fetch(appBase + '/api/styles', { method: 'POST', headers: { Cookie: c, 'Content-Type': 'text/plain' }, body: 'x' });
   assert.equal(bad.status, 415);
   // cookie TIDAK dipakai untuk /mcp (hanya bearer)
   assert.equal((await fetch(appBase + '/mcp', { method: 'POST', headers: { ...J, Cookie: c }, body: '{}' })).status, 401);
@@ -401,4 +401,65 @@ test('model cadangan: model utama gagal -> pindah ke cadangan, tercatat di log, 
 
   failModels = new Set();
   await put({ defaultModel: 'gpt-image-2', fallbackModels: [], approvalThresholdIdr: 1000, dailyBudgetIdr: 2000 }); // pulihkan
+});
+
+test('Style Guide jamak: dasar + per pilar, tambah/ubah/hapus, dipakai di prompt, MCP bisa memilih', async () => {
+  const free = models.data.find((m) => m.id.endsWith(':free') && m.endpoints.includes('images')).id;
+  const api = (m, p, b) => fetch(appBase + p, { method: m, headers: H, body: b ? JSON.stringify(b) : undefined });
+  assert.equal((await api('POST', '/api/styles', { name: '  ' })).status, 400);
+  const base = await (await api('POST', '/api/styles', { name: 'Gaya dasar', text: 'TEKS-DASAR', base: true })).json();
+  const ngopi = await (await api('POST', '/api/styles', { name: 'Ngopi Dulu', pillar: 'Ngopi Dulu', text: 'TEKS-NGOPI' })).json();
+  assert.equal((await api('POST', '/api/styles', { name: 'ngopi dulu' })).status, 400, 'nama kembar (tak peka huruf besar)');
+  assert.equal(base.base, true);
+
+  const gen = (b) => post('/api/generate', { prompt: 'uji style', model: free, ...b });
+  let r = await gen({ style: 'Ngopi Dulu' });
+  assert.equal(r.status, 200);
+  assert.match(calls.at(-1).body, /TEKS-DASAR/);
+  assert.match(calls.at(-1).body, /TEKS-NGOPI/);
+  assert.equal((await r.json()).images[0].style, 'Gaya dasar + Ngopi Dulu');
+  await gen({});
+  assert.match(calls.at(-1).body, /TEKS-DASAR/);
+  assert.doesNotMatch(calls.at(-1).body, /TEKS-NGOPI/, 'tanpa pilihan: hanya gaya dasar');
+  await gen({ useStyle: false, style: 'Ngopi Dulu' });
+  assert.doesNotMatch(calls.at(-1).body, /TEKS-/, 'useStyle=false mematikan semuanya');
+  const before = calls.length;
+  r = await gen({ style: 'tidak-ada' });
+  assert.equal(r.status, 400);
+  assert.equal(calls.length, before, 'style tak dikenal tidak memanggil kenari');
+
+  // hanya satu gaya dasar
+  await api('PUT', `/api/styles/${ngopi.id}`, { base: true });
+  const all = (await (await api('GET', '/api/styles')).json()).styles;
+  assert.deepEqual(all.filter((x) => x.base).map((x) => x.name), ['Ngopi Dulu']);
+  await api('PUT', `/api/styles/${base.id}`, { base: true });
+
+  // seed 7 pilar (tidak menimpa yang ada)
+  const seed = await (await api('POST', '/api/styles/seed-pillars')).json();
+  assert.equal(seed.added.length, 6, 'Ngopi Dulu sudah ada');
+  assert.equal((await (await api('POST', '/api/styles/seed-pillars')).json()).added.length, 0);
+  assert.equal((await (await api('GET', '/api/styles')).json()).styles.find((x) => x.name === 'Ngopi Dulu').text, 'TEKS-NGOPI');
+
+  // MCP: list / set (upsert) / pilih style
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 't', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(appBase + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer rahasia' } } }));
+  const list = await client.callTool({ name: 'list_style_guides', arguments: {} });
+  assert.match(list.content[0].text, /\[DASAR\] Gaya dasar/);
+  assert.match(list.content[0].text, /Satu Langkah Kecil/);
+  await client.callTool({ name: 'set_style_guide', arguments: { name: 'Pilar Uji', text: 'TEKS-UJI', pillar: 'Uji' } });
+  const got = await client.callTool({ name: 'get_style_guide', arguments: { name: 'pilar uji' } });
+  assert.match(got.content[0].text, /TEKS-UJI/);
+  const out = await client.callTool({ name: 'generate_image', arguments: { prompt: 'via mcp', model: free, style: 'Pilar Uji' } });
+  assert.ok(!out.isError, JSON.stringify(out));
+  assert.match(calls.at(-1).body, /TEKS-UJI/);
+  const bad = await client.callTool({ name: 'generate_image', arguments: { prompt: 'via mcp', model: free, style: 'ngawur' } });
+  assert.equal(bad.isError, true);
+  await client.close();
+
+  // hapus
+  const del = await api('DELETE', `/api/styles/${ngopi.id}`);
+  assert.equal(del.status, 200);
+  assert.equal((await api('DELETE', `/api/styles/${ngopi.id}`)).status, 404);
 });
