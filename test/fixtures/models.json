@@ -1,0 +1,596 @@
+{
+ "data": [
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "agnes-image-2-0-flash:free",
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Agnes Image 2.0 Flash",
+   "object": "model",
+   "owned_by": "agnes",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": true,
+    "input": null,
+    "output": null,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "agnes-image-2-1-flash:free",
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Agnes Image 2.1 Flash",
+   "object": "model",
+   "owned_by": "agnes",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": true,
+    "input": null,
+    "output": null,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "agnes-image-2-5-flash:free",
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Agnes Image 2.5 Flash",
+   "object": "model",
+   "owned_by": "agnes",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": true,
+    "input": null,
+    "output": null,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "gpt-image-2",
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "GPT Image 2",
+   "object": "model",
+   "owned_by": "openai",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 125000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning": false,
+   "reasoning_toggle": false,
+   "sunset_at": null,
+   "tool_call": false
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "gpt-image-2-5-flare",
+   "modalities": {
+    "input": [
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "GPT Image 2.5 Flare",
+   "object": "model",
+   "owned_by": "openai",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 450000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "gpt-image-2-5-sunburst",
+   "modalities": {
+    "input": [
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "GPT Image 2.5 Sunburst",
+   "object": "model",
+   "owned_by": "openai",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 650000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "grok-imagine-image",
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Grok Imagine Image",
+   "object": "model",
+   "owned_by": "x-ai",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 300000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null,
+   "video_extensions": true
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "grok-imagine-image-2-0",
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Grok Imagine Image 2.0",
+   "object": "model",
+   "owned_by": "x-ai",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 900000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null,
+   "video_extensions": true
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "grok-imagine-image-quality",
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Grok Imagine Image Quality",
+   "object": "model",
+   "owned_by": "x-ai",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 750000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null,
+   "video_extensions": true
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "nano-banana",
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Nano Banana",
+   "object": "model",
+   "owned_by": "google",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 150000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "context_length": 131072,
+   "endpoints": [
+    "images"
+   ],
+   "id": "nano-banana-2",
+   "max_output_tokens": 32768,
+   "modalities": {
+    "input": [
+     "image",
+     "text"
+    ],
+    "output": [
+     "text",
+     "image"
+    ]
+   },
+   "name": "Nano Banana 2",
+   "object": "model",
+   "owned_by": "google",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 250000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning": true,
+   "reasoning_options": [
+    "minimal",
+    "high"
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null,
+   "supported_reasoning_levels": [
+    "minimal",
+    "high"
+   ],
+   "tool_call": false
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "nano-banana-2-1",
+   "modalities": {
+    "input": [
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Nano Banana 2.1",
+   "object": "model",
+   "owned_by": "google",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 300000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "nano-banana-2-lite",
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Nano Banana 2 Lite",
+   "object": "model",
+   "owned_by": "google",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 150000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "nano-banana-pro",
+   "modalities": {
+    "input": [
+     "text"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Nano Banana Pro",
+   "object": "model",
+   "owned_by": "google",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 350000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "qwen-image-2.0-pro",
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Qwen-Image-2.0-Pro",
+   "object": "model",
+   "owned_by": "qwen",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 150000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null
+  },
+  {
+   "endpoints": [
+    "images"
+   ],
+   "id": "qwen-image-3.0-pro",
+   "modalities": {
+    "input": [
+     "text",
+     "image"
+    ],
+    "output": [
+     "image"
+    ]
+   },
+   "name": "Qwen-Image-3.0-Pro",
+   "object": "model",
+   "owned_by": "qwen",
+   "pricing": {
+    "cache_read": null,
+    "cache_write": null,
+    "currency": "IDR",
+    "free": false,
+    "input": 0,
+    "output": 0,
+    "unit": "micro_idr_per_1m_tokens"
+   },
+   "pricing_lines": [
+    {
+     "billable": "output_image",
+     "endpoint": "images",
+     "micro_idr": 150000000,
+     "unit": "image",
+     "variant": null
+    }
+   ],
+   "reasoning_toggle": false,
+   "sunset_at": null
+  }
+ ],
+ "object": "list"
+}

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teman Seller Studio</title>
+<style>
+:root{--bg:#fff8ef;--card:#fff;--ink:#2b2118;--mute:#7a6a5a;--line:#eadfce;--accent:#e8590c;--accent-ink:#fff;--ok:#2b8a3e;--bad:#c92a2a;--soft:#fff1e0}
+@media (prefers-color-scheme:dark){:root{--bg:#1d1812;--card:#272018;--ink:#f6ebdc;--mute:#b3a28e;--line:#3a3025;--accent:#ff8a3d;--accent-ink:#1d1812;--ok:#69db7c;--bad:#ff8787;--soft:#33281b}}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0}h1 small{color:var(--mute);font-weight:400}
+.budget{font-size:13px;color:var(--mute)}
+nav{display:flex;gap:6px;padding:10px 16px;flex-wrap:wrap}
+nav button{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:999px;cursor:pointer;font:inherit}
+nav button[aria-selected=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+main{max-width:980px;margin:0 auto;padding:0 16px 48px}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+label{display:block;font-weight:600;margin:12px 0 4px;font-size:13px}
+textarea,input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{min-height:110px;resize:vertical}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{border:1px solid var(--line);background:var(--soft);color:var(--ink);padding:4px 10px;border-radius:999px;cursor:pointer;font-size:13px}
+.btn{background:var(--accent);color:var(--accent-ink);border:0;padding:11px 18px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:wait}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.est{margin:12px 0;padding:10px 12px;border-radius:10px;background:var(--soft);font-size:14px}
+.est.warn{border:1px solid var(--accent)}
+.msg{margin-top:12px;font-size:14px}.msg.err{color:var(--bad)}.msg.ok{color:var(--ok)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tile img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--soft)}
+.tile div{padding:8px 10px;font-size:12px;color:var(--mute)}
+.tile .acts{display:flex;gap:6px;padding:0 10px 10px}
+.tile .acts a,.tile .acts button{font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer;text-decoration:none}
+.check{display:flex;gap:8px;align-items:center;font-weight:400}.check input{width:auto}
+code{background:var(--soft);padding:1px 6px;border-radius:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Teman Seller Studio <small>generate gambar via kenari.id</small></h1>
+  <div class="budget" id="budget"></div>
+</header>
+<nav role="tablist">
+  <button role="tab" data-tab="gen" aria-selected="true">Generate</button>
+  <button role="tab" data-tab="edit" aria-selected="false">Edit gambar</button>
+  <button role="tab" data-tab="gal" aria-selected="false">Galeri</button>
+  <button role="tab" data-tab="set" aria-selected="false">Style &amp; MCP</button>
+</nav>
+<main>
+<section id="gen" class="on">
+  <div class="card">
+    <label for="g-prompt">Prompt</label>
+    <textarea id="g-prompt" placeholder="Contoh: ilustrasi maskot kucing seller online kewalahan dikejar notifikasi chat, gaya flat warm"></textarea>
+    <div class="row">
+      <div><label for="g-model">Model</label><select id="g-model"></select></div>
+      <div><label for="g-n">Jumlah (maks <span class="maxn"></span>)</label><input id="g-n" type="number" min="1" value="1"></div>
+      <div><label for="g-title">Judul file</label><input id="g-title" placeholder="Maskot Notifikasi"></div>
+    </div>
+    <label>Ukuran (petunjuk)</label>
+    <div class="chips" id="g-sizes"></div>
+    <input id="g-size" placeholder="1024x1024" style="margin-top:8px">
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="g-style" checked> Pakai Style Guide Teman Seller</label>
+    <label class="check"><input type="checkbox" id="g-opaque"> Latar transparan (PNG)</label>
+    <div class="est" id="g-est"></div>
+    <label class="check" id="g-appr-wrap" hidden><input type="checkbox" id="g-appr"> Owner (Aditya) sudah menyetujui biaya ini</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn" id="g-go">Generate</button>
+      <button class="btn ghost" id="g-five">Mode 5 opsi</button>
+    </div>
+    <div class="msg" id="g-msg"></div>
+  </div>
+  <div class="grid" id="g-out"></div>
+</section>
+
+<section id="edit">
+  <div class="card">
+    <label>Gambar sumber</label>
+    <div id="e-src" class="msg">Belum dipilih. Pilih dari tab Galeri (tombol Edit) atau unggah file di bawah.</div>
+    <input type="file" id="e-file" accept="image/png,image/jpeg,image/webp" style="margin-top:8px">
+    <label for="e-prompt">Perubahan yang diinginkan</label>
+    <textarea id="e-prompt" placeholder="Contoh: ubah latar menjadi warna krem, tambahkan bayangan lembut"></textarea>
+    <div class="row">
+      <div><label for="e-model">Model</label><select id="e-model"></select></div>
+      <div><label for="e-n">Jumlah</label><input id="e-n" type="number" min="1" value="1"></div>
+      <div><label for="e-title">Judul file</label><input id="e-title" placeholder="Edit Maskot"></div>
+    </div>
+    <div class="est" id="e-est"></div>
+    <label class="check" id="e-appr-wrap" hidden><input type="checkbox" id="e-appr"> Owner (Aditya) sudah menyetujui biaya ini</label>
+    <button class="btn" id="e-go">Edit gambar</button>
+    <div class="msg" id="e-msg"></div>
+  </div>
+  <div class="grid" id="e-out"></div>
+</section>
+
+<section id="gal">
+  <div class="card"><input id="q" placeholder="Cari prompt / nama file"></div>
+  <div class="grid" id="gal-grid"></div>
+</section>
+
+<section id="set">
+  <div class="card">
+    <h3 style="margin-top:0">Style Guide visual</h3>
+    <p class="budget">Teks ini otomatis ditambahkan ke prompt (warna, karakter maskot orisinal, gaya garis). Diisi Kenzo, disetujui Owner.</p>
+    <textarea id="style" placeholder="Contoh: flat illustration hangat, palet oranye-krem, garis tebal rapi, maskot orisinal Teman Seller, tanpa teks di gambar"></textarea>
+    <button class="btn" id="style-save" style="margin-top:8px">Simpan style</button>
+    <div class="msg" id="style-msg"></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Hubungkan ke Claude (MCP)</h3>
+    <p>Claude Code (HTTP):</p>
+    <p><code id="mcp-http"></code></p>
+    <p>Claude Desktop (stdio) di <code>claude_desktop_config.json</code>: lihat README bagian MCP.</p>
+    <label for="token">Access token (jika server memakainya)</label>
+    <input id="token" type="password" placeholder="ACCESS_TOKEN">
+    <button class="btn ghost" id="token-save" style="margin-top:8px">Simpan token di browser ini</button>
+  </div>
+</section>
+</main>
+<script src="/app.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "teman-seller-studio",
+  "version": "0.1.0",
+  "description": "Teman Seller Studio: web app + MCP server untuk generate gambar via API kenari.id",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "mcp:stdio": "node src/stdio.js",
+    "test": "node --test --test-force-exit"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  }
+}
