@@ -94,6 +94,8 @@ export function createApp() {
       retentionDays: config.retentionDays,
       user: w === 'session' ? config.adminUser : null,
       publicUrlSet: config.publicUrl.startsWith('https://'),
+      // rahasia konektor hanya ditunjukkan ke admin yang login (bukan ke pemegang token mesin)
+      mcpPathSecret: w === 'session' && config.mcpPathSecret.length >= 24 ? config.mcpPathSecret : null,
     });
   });
   api.get('/settings', async (_req, res, next) => {
@@ -161,7 +163,7 @@ export function createApp() {
   });
 
   // MCP lewat Streamable HTTP (stateless): hubungkan dari Claude Code / klien MCP remote.
-  app.post('/mcp', bearerOnly, async (req, res) => {
+  const mcpHandler = async (req, res) => {
     const server = buildMcpServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => { transport.close(); server.close(); });
@@ -171,8 +173,19 @@ export function createApp() {
     } catch (e) {
       if (!res.headersSent) res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' }, id: null });
     }
-  });
-  app.all('/mcp', bearerOnly, (_req, res) => res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed' }, id: null }));
+  };
+  const notAllowed = (_req, res) => res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed' }, id: null });
+  app.post('/mcp', bearerOnly, mcpHandler);
+  app.all('/mcp', bearerOnly, notAllowed);
+
+  // URL konektor dengan rahasia di path (untuk "Add custom connector" yang hanya meminta URL).
+  // Hanya membuka MCP; tidak berlaku untuk web/API. Nonaktif jika MCP_PATH_SECRET kosong/pendek.
+  const pathSecret = (req, res, next) => {
+    const ok = config.mcpPathSecret.length >= 24 && safeEqual(req.params.secret, config.mcpPathSecret);
+    return ok ? next() : res.status(404).type('text').send('Not found');
+  };
+  app.post('/mcp/:secret', pathSecret, mcpHandler);
+  app.all('/mcp/:secret', pathSecret, notAllowed);
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {

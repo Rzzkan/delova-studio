@@ -13,6 +13,8 @@ export const config = {
   kenariBaseUrl: (process.env.KENARI_BASE_URL || 'https://kenari.id/v1').replace(/\/$/, ''),
   kenariApiKey: process.env.KENARI_API_KEY || '',
   accessToken: process.env.ACCESS_TOKEN || '', // token mesin: dipakai /mcp dan klien API
+  // Opsional: rahasia di URL konektor Claude, /mcp/<rahasia>. Hanya membuka MCP (bukan web/API). Min. 24 karakter.
+  mcpPathSecret: process.env.MCP_PATH_SECRET || '',
   adminUser: process.env.ADMIN_USER || 'admin', // login web dashboard
   adminPassword: process.env.ADMIN_PASSWORD || '',
   sessionHours: num(process.env.SESSION_HOURS, 168),

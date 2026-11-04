@@ -96,6 +96,11 @@ async function refreshConfig() {
   $('#budget-pill').textContent = `${rp(cfg.spentTodayIdr)} / ${limitText(cfg.dailyBudgetIdr)} hari ini`;
   if (cfg.user) { $('#who').textContent = cfg.user; $('#logout').classList.remove('hidden'); }
   document.querySelectorAll('.maxn').forEach((x) => (x.textContent = cfg.maxN));
+  const base = cfg.publicUrlSet ? new URL(location.href).origin : location.origin;
+  const has = Boolean(cfg.mcpPathSecret);
+  $('#mcp-url-wrap').classList.toggle('hidden', !has);
+  $('#mcp-url-off').classList.toggle('hidden', has);
+  if (has) $('#mcp-url').textContent = `${base}/mcp/${cfg.mcpPathSecret}`;
 }
 
 async function loadDash() {
@@ -169,6 +174,7 @@ async function init() {
   $('#theme').onclick = () => { const d = document.documentElement.classList.toggle('dark'); store.set('theme', d ? 'dark' : 'light'); };
   $('#logout').onclick = async () => { await fetch('/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); location.replace('/login'); };
   $('#token').value = tokenGet();
+  $('#mcp-url-copy').onclick = () => copy($('#mcp-url').textContent, $('#mcp-url-msg'), 'URL konektor disalin');
   $('#mcp-http').textContent = `claude mcp add --transport http teman-seller-studio ${location.origin}/mcp --header "Authorization: Bearer <ACCESS_TOKEN>"`;
   $('#token-save').onclick = () => { store.set('tk', $('#token').value); location.reload(); };
   window.addEventListener('hashchange', route);

@@ -30,6 +30,7 @@ Data gambar ada di `./data` (otomatis dihapus permanen setelah 7 hari).
 Nginx: salin `deploy/nginx.studio.temanseller.com.conf` ke `/etc/nginx/sites-available/`, ganti port, aktifkan, lalu `sudo certbot --nginx -d studio.temanseller.com`. Caddy: pakai `deploy/Caddyfile.snippet`. Timeout 360 detik penting karena generate gambar bisa lama.
 
 ## 5. Sambungkan Claude
+Paling mudah: Settings > Connectors > Add custom connector, tempel `https://studio.temanseller.com/mcp/<MCP_PATH_SECRET>` (dicetak skrip deploy, juga ada di dashboard > Koneksi MCP). Alternatif lewat terminal:
 ```bash
 claude mcp add --transport http teman-seller-studio https://studio.temanseller.com/mcp \
   --header "Authorization: Bearer <ACCESS_TOKEN>"

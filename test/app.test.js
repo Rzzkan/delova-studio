@@ -28,6 +28,7 @@ before(async () => {
   process.env.KENARI_API_KEY = 'kn-test';
   process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'tss-'));
   process.env.ACCESS_TOKEN = 'rahasia';
+  process.env.MCP_PATH_SECRET = 'rahasia-konektor-0123456789abcdef';
   process.env.ADMIN_USER = 'bos';
   process.env.ADMIN_PASSWORD = 'sandi-panjang-123';
   process.env.PUBLIC_URL = 'https://studio.example.test';
@@ -265,4 +266,26 @@ test('weekStartOf: pekan dimulai Senin', async () => {
   assert.equal(weekStartOf('2026-11-05'), '2026-11-02'); // Kamis -> Senin
   assert.equal(weekStartOf('2026-11-02'), '2026-11-02');
   assert.equal(weekStartOf('2026-11-08'), '2026-11-02'); // Minggu masih pekan yang sama
+});
+
+test('URL konektor /mcp/<rahasia>: tools terbuka tanpa header, rahasia salah ditolak, tidak membuka API', async () => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 't', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(appBase + '/mcp/rahasia-konektor-0123456789abcdef')));
+  const names = (await client.listTools()).tools.map((t) => t.name);
+  assert.ok(names.includes('generate_image') && names.includes('get_image_public_url'));
+  await client.close();
+  assert.equal((await fetch(appBase + '/mcp/salah-salah-salah-salah-salah', { method: 'POST', headers: J, body: '{}' })).status, 404);
+  assert.equal((await fetch(appBase + '/mcp/pendek', { method: 'POST', headers: J, body: '{}' })).status, 404);
+  assert.equal((await fetch(appBase + '/api/config?x=/mcp/rahasia-konektor-0123456789abcdef')).status, 401, 'rahasia tidak membuka API');
+});
+
+test('rahasia konektor hanya ditampilkan ke admin yang login, tidak ke bearer token', async () => {
+  const viaToken = await (await fetch(appBase + '/api/config', { headers: H })).json();
+  assert.equal(viaToken.mcpPathSecret, null);
+  const ok = await login({ user: 'bos', password: 'sandi-panjang-123' }, '10.7.7.7');
+  const c = ok.headers.get('set-cookie').split(';')[0];
+  const viaSession = await (await fetch(appBase + '/api/config', { headers: { Cookie: c } })).json();
+  assert.equal(viaSession.mcpPathSecret, 'rahasia-konektor-0123456789abcdef');
 });

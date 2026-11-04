@@ -33,6 +33,8 @@ Mengubah tampilan: edit `public/*.html|js`, lalu `npm run build:css` (Tailwind C
 `.env` dan folder `data/` tidak pernah masuk git. Jangan simpan API key di Drive atau repo.
 
 ## Hubungkan ke Claude (MCP)
+**Cara termudah, konektor Claude (claude.ai / aplikasi desktop):** Settings, Connectors, *Add custom connector*, tempel URL `https://<domain>/mcp/<MCP_PATH_SECRET>` (juga tampil di dashboard, menu Koneksi MCP). Isi `MCP_PATH_SECRET` di `.env` dengan `openssl rand -hex 24`; skrip `deploy-vps.sh` membuatnya otomatis. URL ini hanya membuka MCP (bukan web/API) dan bersifat rahasia karena ikut tercatat di log Caddy; ganti nilainya untuk mencabut akses.
+
 **Claude Code (HTTP)**, server harus sedang berjalan:
 ```bash
 claude mcp add --transport http teman-seller-studio http://127.0.0.1:3400/mcp \

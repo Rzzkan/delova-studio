@@ -29,6 +29,10 @@ chmod 600 .env
 if ! grep -qE '^ACCESS_TOKEN=.+' .env; then   # wajib: server menolak start tanpa ini
   NEWTOK="$(openssl rand -hex 32)"; setenv ACCESS_TOKEN "$NEWTOK"; echo "ACCESS_TOKEN dibuat"
 fi
+NEWMCP=""
+if ! grep -qE '^MCP_PATH_SECRET=.{24,}' .env; then   # URL konektor Claude
+  NEWMCP="$(openssl rand -hex 24)"; setenv MCP_PATH_SECRET "$NEWMCP"; echo "MCP_PATH_SECRET dibuat"
+fi
 NEWPASS=""
 grep -qE '^ADMIN_USER=.+' .env || setenv ADMIN_USER admin
 if ! grep -qE '^ADMIN_PASSWORD=.{8,}' .env; then   # login web: wajib, minimal 8 karakter
@@ -135,5 +139,9 @@ if [ -n "$NEWTOK" ] || [ -n "$NEWPASS" ]; then
   if [ -n "$NEWPASS" ]; then echo "  Login web : https://${DOMAIN}/login   user=$(grep '^ADMIN_USER=' .env | cut -d= -f2-)   password=${NEWPASS}"; fi
   if [ -n "$NEWTOK" ]; then echo "  ACCESS_TOKEN (Claude/MCP): ${NEWTOK}"; fi
 fi
-echo; echo "Sambungkan Claude Code:"
+MCP_SECRET="$(grep '^MCP_PATH_SECRET=' .env | cut -d= -f2-)"
+echo; echo "URL konektor Claude (Settings > Connectors > Add custom connector):"
+echo "  https://${DOMAIN}/mcp/${MCP_SECRET}"
+echo "  (URL yang sama tersedia di dashboard: menu Koneksi MCP)"
+echo; echo "Atau lewat Claude Code (terminal):"
 echo "claude mcp add --transport http teman-seller-studio https://${DOMAIN}/mcp --header \"Authorization: Bearer <ACCESS_TOKEN>\""
