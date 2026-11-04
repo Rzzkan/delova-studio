@@ -17,7 +17,7 @@ Pilih salah satu port dari bagian "Port kosong". Port 3300 sudah dipakai TemanSe
 cp .env.example .env
 nano .env     # KENARI_API_KEY=..., ACCESS_TOKEN=<acak panjang: openssl rand -hex 32>
 ```
-`ACCESS_TOKEN` wajib: server menolak start di luar localhost tanpa token. Token sama dipakai untuk web UI dan Claude. Jangan taruh key di Drive atau repo.
+`ACCESS_TOKEN` (untuk Claude/MCP) dan `ADMIN_PASSWORD` (login web, minimal 8 karakter) wajib: server menolak start di luar localhost tanpa keduanya. `scripts/deploy-vps.sh` membuatnya otomatis dan mencetak sekali. Jangan taruh key di Drive atau repo.
 
 ## 3. Jalankan
 ```bash

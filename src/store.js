@@ -7,6 +7,7 @@ import { config } from './config.js';
 const imagesDir = () => join(config.dataDir, 'images');
 const indexFile = () => join(config.dataDir, 'index.json');
 const styleFile = () => join(config.dataDir, 'style.txt');
+const ledgerFile = () => join(config.dataDir, 'ledger.jsonl');
 
 const EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
 
@@ -44,6 +45,31 @@ async function writeIndex(entries) {
   await rename(tmp, indexFile());
 }
 
+/**
+ * Buku biaya: baris kecil per batch (tanggal WIB + rupiah), TIDAK ikut dihapus oleh retensi gambar,
+ * supaya total mingguan/bulanan tetap akurat walau gambarnya sudah dihapus.
+ */
+async function ensureLedger() {
+  if (existsSync(ledgerFile())) return;
+  const rows = (await readIndex()).filter((e) => e.costIdr > 0).map((e) => ({ at: e.createdAt, date: e.date, costIdr: e.costIdr, model: e.model, batch: e.batch }));
+  await writeFile(ledgerFile(), rows.map((r) => JSON.stringify(r) + '\n').join(''));
+}
+async function readLedger() {
+  await ensureLedger();
+  return (await readFile(ledgerFile(), 'utf8')).split('\n').filter(Boolean).map((l) => JSON.parse(l));
+}
+export function weekStartOf(dateStr) { // Senin pekan berjalan (WIB)
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const back = (d.getUTCDay() + 6) % 7;
+  return new Date(d.getTime() - back * 86400000).toISOString().slice(0, 10);
+}
+export async function usage() {
+  const rows = await readLedger();
+  const today = wibDate(), ws = weekStartOf(today), ms = today.slice(0, 8) + '01';
+  const sum = (f) => rows.filter(f).reduce((a, r) => a + (r.costIdr || 0), 0);
+  return { today: sum((r) => r.date === today), week: sum((r) => r.date >= ws), month: sum((r) => r.date >= ms), weekStart: ws, monthStart: ms };
+}
+
 export async function init() {
   await mkdir(imagesDir(), { recursive: true });
 }
@@ -52,6 +78,7 @@ export async function init() {
 export function saveBatch({ images, meta }) {
   return locked(async () => {
     await init();
+    await ensureLedger(); // backfill dari index lama sebelum entri baru ditambahkan
     const entries = await readIndex();
     const date = wibDate();
     const role = slugify(meta.role || 'Kenzo', 20);
@@ -86,6 +113,7 @@ export function saveBatch({ images, meta }) {
       saved.push(entry);
     }
     await writeIndex(entries);
+    if (meta.costIdr > 0) await appendFile(ledgerFile(), JSON.stringify({ at: new Date().toISOString(), date, costIdr: meta.costIdr, model: meta.model, batch: `${prefix}_v${version}` }) + '\n');
     return saved;
   });
 }
@@ -118,8 +146,7 @@ export async function readImageFile(file) {
 }
 
 export async function spentToday() {
-  const today = wibDate();
-  return (await readIndex()).filter((e) => e.date === today).reduce((s, e) => s + (e.costIdr || 0), 0);
+  return (await usage()).today;
 }
 
 export async function getStyle() {

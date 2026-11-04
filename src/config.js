@@ -12,11 +12,17 @@ export const config = {
   host: process.env.HOST || '127.0.0.1',
   kenariBaseUrl: (process.env.KENARI_BASE_URL || 'https://kenari.id/v1').replace(/\/$/, ''),
   kenariApiKey: process.env.KENARI_API_KEY || '',
-  accessToken: process.env.ACCESS_TOKEN || '',
+  accessToken: process.env.ACCESS_TOKEN || '', // token mesin: dipakai /mcp dan klien API
+  adminUser: process.env.ADMIN_USER || 'admin', // login web dashboard
+  adminPassword: process.env.ADMIN_PASSWORD || '',
+  sessionHours: num(process.env.SESSION_HOURS, 168),
   defaultModel: process.env.DEFAULT_MODEL || 'gpt-image-2',
   dataDir: resolve(root, process.env.DATA_DIR || 'data'),
   // Aturan kantor: pengeluaran uang butuh persetujuan Owner.
+  // Nilai awal batas biaya. Bisa diubah di Dashboard > Batas Biaya (disimpan di data/settings.json). 0 = tanpa batas.
   dailyBudgetIdr: num(process.env.DAILY_BUDGET_IDR, 5000),
+  weeklyBudgetIdr: num(process.env.WEEKLY_BUDGET_IDR, 0),
+  monthlyBudgetIdr: num(process.env.MONTHLY_BUDGET_IDR, 0),
   approvalThresholdIdr: num(process.env.APPROVAL_THRESHOLD_IDR, 1000),
   maxN: num(process.env.MAX_N, 5),
   requestTimeoutMs: num(process.env.REQUEST_TIMEOUT_MS, 300000),

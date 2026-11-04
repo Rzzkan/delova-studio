@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { config } from './config.js';
 
 let secret;
-async function getSecret() {
+export async function getSecret() {
   if (secret) return secret;
   if (config.signingSecret || config.accessToken) return (secret = config.signingSecret || config.accessToken);
   const f = join(config.dataDir, '.signing-secret');

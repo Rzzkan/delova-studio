@@ -36,7 +36,7 @@ function wrap(fn) {
 
 const common = {
   model: z.string().optional().describe(`ID model gambar. Default ${config.defaultModel}. Lihat list_image_models.`),
-  n: z.number().int().min(1).max(config.maxN).optional().describe(`Jumlah gambar (1-${config.maxN}). Aturan kantor: minta 5 untuk opsi konsep.`),
+  n: z.number().int().min(1).max(10).optional().describe('Jumlah gambar. Dibatasi pengaturan Dashboard (default 5). Aturan kantor: minta 5 untuk opsi konsep.'),
   size: z.string().optional().describe('Petunjuk ukuran, mis. 1024x1024, 1024x1280 (feed 4:5), 1024x1792 (story). Bukan jaminan.'),
   title: z.string().optional().describe('Judul singkat untuk nama file (YYYY-MM-DD_Role_Judul-Singkat_v1).'),
   role: z.string().optional().describe('Nama peran pembuat untuk nama file, default Kenzo.'),

@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import * as kenari from './kenari.js';
 import * as store from './store.js';
+import * as settings from './settings.js';
 
 export class ApprovalRequired extends Error {
   constructor(message, details) {
@@ -17,33 +18,47 @@ async function priceOf(model) {
   return m.pricePerImageIdr;
 }
 
+export const clampN = (n, max) => Math.min(max, Math.max(1, Math.floor(Number(n) || 1)));
+const remain = (limit, spent) => (limit > 0 ? Math.max(0, limit - spent) : null); // null = tanpa batas
+
 export async function estimate({ model = config.defaultModel, n = 1 }) {
+  const st = await settings.get();
   const price = await priceOf(model);
-  const count = clampN(n);
+  const count = clampN(n, st.maxN);
   const totalIdr = price === null ? null : price * count;
-  const spent = await store.spentToday();
+  const u = await store.usage();
   return {
     model,
     n: count,
     pricePerImageIdr: price,
     totalIdr,
-    spentTodayIdr: spent,
-    dailyBudgetIdr: config.dailyBudgetIdr,
-    remainingTodayIdr: Math.max(0, config.dailyBudgetIdr - spent),
-    needsApproval: totalIdr === null || totalIdr > config.approvalThresholdIdr,
-    approvalThresholdIdr: config.approvalThresholdIdr,
+    spentTodayIdr: u.today,
+    spentWeekIdr: u.week,
+    spentMonthIdr: u.month,
+    dailyBudgetIdr: st.dailyBudgetIdr,
+    weeklyBudgetIdr: st.weeklyBudgetIdr,
+    monthlyBudgetIdr: st.monthlyBudgetIdr,
+    remainingTodayIdr: remain(st.dailyBudgetIdr, u.today),
+    remainingWeekIdr: remain(st.weeklyBudgetIdr, u.week),
+    remainingMonthIdr: remain(st.monthlyBudgetIdr, u.month),
+    needsApproval: totalIdr === null || totalIdr > st.approvalThresholdIdr,
+    approvalThresholdIdr: st.approvalThresholdIdr,
   };
 }
 
-export const clampN = (n) => Math.min(config.maxN, Math.max(1, Math.floor(Number(n) || 1)));
-
 // Penjaga biaya: aturan kantor menyatakan pengeluaran uang butuh persetujuan Owner.
 async function guard(est, approved) {
-  if (est.totalIdr !== null && est.spentTodayIdr + est.totalIdr > est.dailyBudgetIdr) {
-    throw new ApprovalRequired(
-      `Batas budget harian Rp${est.dailyBudgetIdr} terlampaui (terpakai Rp${est.spentTodayIdr}, permintaan ini Rp${est.totalIdr}). Owner perlu menaikkan DAILY_BUDGET_IDR.`,
-      est,
-    );
+  for (const [label, limit, spent] of [
+    ['harian', est.dailyBudgetIdr, est.spentTodayIdr],
+    ['mingguan', est.weeklyBudgetIdr, est.spentWeekIdr],
+    ['bulanan', est.monthlyBudgetIdr, est.spentMonthIdr],
+  ]) {
+    if (limit > 0 && est.totalIdr !== null && spent + est.totalIdr > limit) {
+      throw new ApprovalRequired(
+        `Batas budget ${label} Rp${limit} terlampaui (terpakai Rp${spent}, permintaan ini Rp${est.totalIdr}). Owner dapat menaikkannya di Dashboard > Batas Biaya.`,
+        est,
+      );
+    }
   }
   if (est.needsApproval && !approved) {
     throw new ApprovalRequired(

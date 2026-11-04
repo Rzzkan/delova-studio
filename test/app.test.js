@@ -28,6 +28,8 @@ before(async () => {
   process.env.KENARI_API_KEY = 'kn-test';
   process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'tss-'));
   process.env.ACCESS_TOKEN = 'rahasia';
+  process.env.ADMIN_USER = 'bos';
+  process.env.ADMIN_PASSWORD = 'sandi-panjang-123';
   process.env.PUBLIC_URL = 'https://studio.example.test';
   process.env.RETENTION_DAYS = '7';
   process.env.DAILY_BUDGET_IDR = '2000';
@@ -160,4 +162,107 @@ test('retensi 7 hari: gambar kedaluwarsa disembunyikan lalu dihapus permanen ole
   assert.ok(existsSync(store.imagePath(survivor.file)), 'gambar baru tetap ada');
   assert.ok(readFileSync(join(config.dataDir, 'deleted.log'), 'utf8').includes(victim.id));
   assert.ok(!JSON.parse(readFileSync(idx, 'utf8')).some((e) => e.id === victim.id));
+});
+
+const J = { 'Content-Type': 'application/json' };
+const login = (body, ip = '10.0.0.1') => fetch(appBase + '/auth/login', { method: 'POST', headers: { ...J, 'X-Forwarded-For': ip }, body: JSON.stringify(body) });
+
+test('login: halaman utama dialihkan ke /login, password salah ditolak, benar memberi cookie HttpOnly', async () => {
+  const home = await fetch(appBase + '/', { redirect: 'manual' });
+  assert.equal(home.status, 302);
+  assert.equal(home.headers.get('location'), '/login');
+  assert.equal((await fetch(appBase + '/login')).status, 200);
+  assert.equal((await login({ user: 'bos', password: 'salah' }, '10.0.0.2')).status, 401);
+  assert.equal((await login({ user: 'lain', password: 'sandi-panjang-123' }, '10.0.0.2')).status, 401);
+  const ok = await login({ user: 'bos', password: 'sandi-panjang-123' }, '10.0.0.3');
+  assert.equal(ok.status, 200);
+  const cookie = ok.headers.get('set-cookie');
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /SameSite=Lax/);
+  const c = cookie.split(';')[0];
+  assert.equal((await fetch(appBase + '/', { headers: { Cookie: c } })).status, 200);
+  const cfgRes = await fetch(appBase + '/api/config', { headers: { Cookie: c } });
+  assert.equal(cfgRes.status, 200);
+  assert.equal((await cfgRes.json()).user, 'bos');
+  const gal = await (await fetch(appBase + '/api/gallery', { headers: H })).json();
+  assert.equal((await fetch(`${appBase}/files/${gal[0].file}`, { headers: { Cookie: c } })).status, 200, 'gambar bisa dibuka dengan sesi login');
+  // CSRF: cookie + body non-JSON ditolak
+  const bad = await fetch(appBase + '/api/style', { method: 'PUT', headers: { Cookie: c, 'Content-Type': 'text/plain' }, body: 'x' });
+  assert.equal(bad.status, 415);
+  // cookie TIDAK dipakai untuk /mcp (hanya bearer)
+  assert.equal((await fetch(appBase + '/mcp', { method: 'POST', headers: { ...J, Cookie: c }, body: '{}' })).status, 401);
+  // cookie palsu / dirusak
+  assert.equal((await fetch(appBase + '/api/config', { headers: { Cookie: c.slice(0, -3) + 'abc' } })).status, 401);
+  // logout menghapus cookie
+  const out = await fetch(appBase + '/auth/logout', { method: 'POST', headers: { ...J, Cookie: c }, body: '{}' });
+  assert.match(out.headers.get('set-cookie'), /Max-Age=0/);
+});
+
+test('login: dikunci 15 menit setelah 5 kali gagal dari IP yang sama', async () => {
+  for (let i = 0; i < 5; i++) assert.equal((await login({ user: 'bos', password: 'x' + i }, '10.9.9.9')).status, 401);
+  const locked = await login({ user: 'bos', password: 'sandi-panjang-123' }, '10.9.9.9');
+  assert.equal(locked.status, 429, 'bahkan password benar ditolak saat terkunci');
+  assert.equal((await login({ user: 'bos', password: 'sandi-panjang-123' }, '10.8.8.8')).status, 200, 'IP lain tidak terpengaruh');
+});
+
+test('pengaturan biaya: validasi, batas harian/mingguan/bulanan benar-benar menahan generate', async () => {
+  const put = (b) => fetch(appBase + '/api/settings', { method: 'PUT', headers: H, body: JSON.stringify(b) });
+  assert.equal((await put({ dailyBudgetIdr: -5 })).status, 400);
+  assert.equal((await put({ maxN: 11 })).status, 400);
+  assert.equal((await put({ dailyBudgetIdr: 1.5 })).status, 400);
+  const gen = () => post('/api/generate', { prompt: 'uji batas', model: 'gpt-image-2', useStyle: false });
+  const before = calls.length;
+
+  assert.equal((await put({ dailyBudgetIdr: 100, weeklyBudgetIdr: 0, monthlyBudgetIdr: 0 })).status, 200);
+  let r = await gen();
+  assert.equal(r.status, 402);
+  assert.match((await r.json()).error, /harian/i);
+
+  const cfg0 = await (await fetch(appBase + '/api/config', { headers: H })).json();
+  assert.equal(cfg0.dailyBudgetIdr, 100);
+  await put({ dailyBudgetIdr: 0, weeklyBudgetIdr: cfg0.spentWeekIdr + 100 });
+  r = await gen();
+  assert.equal(r.status, 402);
+  assert.match((await r.json()).error, /mingguan/i);
+
+  await put({ weeklyBudgetIdr: 0, monthlyBudgetIdr: cfg0.spentMonthIdr + 100 });
+  r = await gen();
+  assert.equal(r.status, 402);
+  assert.match((await r.json()).error, /bulanan/i);
+  assert.equal(calls.length, before, 'kenari tidak dipanggil saat batas terlewati');
+
+  await put({ monthlyBudgetIdr: 0, maxN: 2 }); // tanpa batas: generate lolos, n dipotong ke maxN
+  r = await post('/api/generate', { prompt: 'uji maxn', model: 'gpt-image-2', n: 5, useStyle: false });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).images.length, 2);
+  await put({ dailyBudgetIdr: 2000, maxN: 5 }); // pulihkan
+});
+
+test('ledger: total biaya tidak hilang saat gambar dihapus oleh retensi', async () => {
+  const store = await import('../src/store.js');
+  const before = await store.usage();
+  assert.ok(before.today > 0);
+  const { config } = await import('../src/config.js');
+  const idx = join(config.dataDir, 'index.json');
+  const entries = JSON.parse(readFileSync(idx, 'utf8'));
+  for (const e of entries) e.expiresAt = new Date(Date.now() - 1000).toISOString();
+  writeFileSync(idx, JSON.stringify(entries));
+  const r = await store.sweep();
+  assert.ok(r.deleted > 0);
+  assert.deepEqual(await store.usage(), before, 'pemakaian tetap sama setelah semua gambar dihapus');
+});
+
+test('share dari web: butuh gambar ada; PUBLIC_URL https dipakai', async () => {
+  const g = await (await post('/api/generate', { prompt: 'untuk share', model: 'gpt-image-2', useStyle: false })).json();
+  const r = await post('/api/share', { id: g.images[0].id, ttlMinutes: 10 });
+  assert.equal(r.status, 200);
+  assert.match((await r.json()).url, /^https:\/\/studio\.example\.test\/p\//);
+  assert.equal((await post('/api/share', { id: 'tidakada' })).status, 404);
+});
+
+test('weekStartOf: pekan dimulai Senin', async () => {
+  const { weekStartOf } = await import('../src/store.js');
+  assert.equal(weekStartOf('2026-11-05'), '2026-11-02'); // Kamis -> Senin
+  assert.equal(weekStartOf('2026-11-02'), '2026-11-02');
+  assert.equal(weekStartOf('2026-11-08'), '2026-11-02'); // Minggu masih pekan yang sama
 });

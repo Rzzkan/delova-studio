@@ -29,6 +29,11 @@ chmod 600 .env
 if ! grep -qE '^ACCESS_TOKEN=.+' .env; then   # wajib: server menolak start tanpa ini
   NEWTOK="$(openssl rand -hex 32)"; setenv ACCESS_TOKEN "$NEWTOK"; echo "ACCESS_TOKEN dibuat"
 fi
+NEWPASS=""
+grep -qE '^ADMIN_USER=.+' .env || setenv ADMIN_USER admin
+if ! grep -qE '^ADMIN_PASSWORD=.{8,}' .env; then   # login web: wajib, minimal 8 karakter
+  NEWPASS="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-20)"; setenv ADMIN_PASSWORD "$NEWPASS"; echo "ADMIN_PASSWORD dibuat"
+fi
 if ! grep -qE '^KENARI_API_KEY=kn-[^ ]{8,}' .env || grep -q 'isi-dari-dashboard' .env; then
   read -rsp "Tempel KENARI_API_KEY (tidak tampil di layar), lalu Enter: " KEY; echo
   [ -n "$KEY" ] || die "API key kosong"
@@ -125,8 +130,10 @@ for _ in $(seq 1 12); do
 done
 if [ -n "$OK" ]; then printf '\033[32mBERHASIL: https://%s/healthz OK\033[0m\n' "$DOMAIN"; else echo "Belum merespons. Cek: docker logs --tail 50 ${CADDY}"; fi
 
-if [ -n "$NEWTOK" ]; then
-  echo; echo "ACCESS_TOKEN (simpan di password manager, dibutuhkan untuk login web dan Claude):"; echo "$NEWTOK"
+if [ -n "$NEWTOK" ] || [ -n "$NEWPASS" ]; then
+  echo; echo "SIMPAN DI PASSWORD MANAGER (hanya ditampilkan sekali):"
+  if [ -n "$NEWPASS" ]; then echo "  Login web : https://${DOMAIN}/login   user=$(grep '^ADMIN_USER=' .env | cut -d= -f2-)   password=${NEWPASS}"; fi
+  if [ -n "$NEWTOK" ]; then echo "  ACCESS_TOKEN (Claude/MCP): ${NEWTOK}"; fi
 fi
 echo; echo "Sambungkan Claude Code:"
 echo "claude mcp add --transport http teman-seller-studio https://${DOMAIN}/mcp --header \"Authorization: Bearer <ACCESS_TOKEN>\""

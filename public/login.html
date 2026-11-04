@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Masuk - Teman Seller Studio</title>
+<script>try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>
+<link rel="stylesheet" href="/tailwind.css">
+</head>
+<body class="flex min-h-screen items-center justify-center bg-graylight px-4 font-sans text-base text-body antialiased dark:bg-bodydark dark:text-[#AEB7C0]">
+  <main class="w-full max-w-md">
+    <div class="mb-6 flex items-center justify-center gap-3">
+      <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-xl font-bold text-white">T</div>
+      <div><div class="text-lg font-semibold text-bodydark dark:text-white">Teman Seller Studio</div><div class="text-xs">Studio gambar untuk Kantor AI</div></div>
+    </div>
+    <form id="form" class="card" autocomplete="on">
+      <h1 class="text-xl font-semibold text-bodydark dark:text-white">Masuk</h1>
+      <p class="mt-1 text-sm">Gunakan user dan password dari pengaturan server.</p>
+      <label class="lbl" for="user">User</label>
+      <input id="user" name="username" class="field" autocomplete="username" autofocus required>
+      <label class="lbl" for="password">Password</label>
+      <input id="password" name="password" type="password" class="field" autocomplete="current-password" required>
+      <p id="msg" class="mt-3 min-h-[1.25rem] text-sm text-danger" role="alert"></p>
+      <button id="go" class="btn mt-2 w-full">Masuk</button>
+    </form>
+    <p class="mt-4 text-center text-xs">Akses Claude (MCP) memakai token terpisah, bukan halaman ini.</p>
+  </main>
+<script>
+const $ = (s) => document.querySelector(s);
+fetch('/auth/me').then((r) => r.json()).then((m) => {
+  if (m.loggedIn && m.user) location.replace('/');
+  if (!m.loginRequired) { $('#msg').textContent = 'Login web belum diaktifkan: isi ADMIN_PASSWORD di .env server.'; $('#go').disabled = true; }
+}).catch(() => {});
+$('#form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('#go').disabled = true; $('#msg').textContent = '';
+  try {
+    const r = await fetch('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: $('#user').value, password: $('#password').value }) });
+    const b = await r.json().catch(() => ({}));
+    if (r.ok) return location.replace('/');
+    $('#msg').textContent = b.error || `Gagal masuk (HTTP ${r.status})`;
+  } catch { $('#msg').textContent = 'Tidak bisa terhubung ke server'; }
+  $('#go').disabled = false; $('#password').select();
+});
+</script>
+</body>
+</html>

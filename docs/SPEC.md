@@ -24,10 +24,11 @@ Satu tempat untuk generate/edit gambar kebutuhan konten Teman Seller, bisa dipak
 3. Secret hanya di `.env` (di-gitignore). Tidak ada secret di repo/Drive.
 4. Tidak deploy ke production tanpa Owner.
 5. Retensi: gambar disimpan maksimal `RETENTION_DAYS` (7 hari) lalu dihapus permanen otomatis (kebijakan Owner, 2026-11-04). Tidak ada fitur pemulihan.
-6. Penerusan ke Social Hub hanya lewat tautan bertanda tangan (HMAC) berbatas waktu; menayangkan konten tetap butuh persetujuan Owner.
+6. Login web memakai `ADMIN_USER`/`ADMIN_PASSWORD` (env); `/mcp` hanya menerima bearer `ACCESS_TOKEN`. Batas biaya bisa diubah Owner di dashboard, tidak lewat MCP.
+7. Penerusan ke Social Hub hanya lewat tautan bertanda tangan (HMAC) berbatas waktu; menayangkan konten tetap butuh persetujuan Owner.
 
 ## Di luar cakupan v0.1
 OAuth connector Claude.ai, mask editor, antrean/penjadwalan, upload otomatis ke Drive.
 
 ## Pengujian
-`npm test`: 11 tes dengan server kenari tiruan (auth, harga, penamaan, ambang, budget, error 200, edits multipart, MCP end-to-end, path traversal, tautan bertanda tangan, retensi dan sweep). Belum diuji ke API kenari asli karena API key belum tersedia di sesi ini.
+`npm test`: 17 tes dengan server kenari tiruan (auth, harga, penamaan, ambang, budget, error 200, edits multipart, MCP end-to-end, path traversal, tautan bertanda tangan, retensi dan sweep, login/cookie/CSRF/penguncian, batas harian-mingguan-bulanan, ledger). Belum diuji ke API kenari asli karena API key belum tersedia di sesi ini.
