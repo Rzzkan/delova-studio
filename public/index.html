@@ -4,123 +4,146 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Teman Seller Studio</title>
-<style>
-:root{--bg:#fff8ef;--card:#fff;--ink:#2b2118;--mute:#7a6a5a;--line:#eadfce;--accent:#e8590c;--accent-ink:#fff;--ok:#2b8a3e;--bad:#c92a2a;--soft:#fff1e0}
-@media (prefers-color-scheme:dark){:root{--bg:#1d1812;--card:#272018;--ink:#f6ebdc;--mute:#b3a28e;--line:#3a3025;--accent:#ff8a3d;--accent-ink:#1d1812;--ok:#69db7c;--bad:#ff8787;--soft:#33281b}}
-*{box-sizing:border-box}[hidden]{display:none!important}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
-h1{font-size:18px;margin:0}h1 small{color:var(--mute);font-weight:400}
-.budget{font-size:13px;color:var(--mute)}
-nav{display:flex;gap:6px;padding:10px 16px;flex-wrap:wrap}
-nav button{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:999px;cursor:pointer;font:inherit}
-nav button[aria-selected=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-main{max-width:980px;margin:0 auto;padding:0 16px 48px}
-section{display:none}section.on{display:block}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
-label{display:block;font-weight:600;margin:12px 0 4px;font-size:13px}
-textarea,input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit}
-textarea{min-height:110px;resize:vertical}
-.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.chip{border:1px solid var(--line);background:var(--soft);color:var(--ink);padding:4px 10px;border-radius:999px;cursor:pointer;font-size:13px}
-.btn{background:var(--accent);color:var(--accent-ink);border:0;padding:11px 18px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
-.btn:disabled{opacity:.5;cursor:wait}
-.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
-.est{margin:12px 0;padding:10px 12px;border-radius:10px;background:var(--soft);font-size:14px}
-.est.warn{border:1px solid var(--accent)}
-.msg{margin-top:12px;font-size:14px}.msg.err{color:var(--bad)}.msg.ok{color:var(--ok)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
-.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.tile img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--soft)}
-.tile div{padding:8px 10px;font-size:12px;color:var(--mute)}
-.tile .acts{display:flex;gap:6px;padding:0 10px 10px}
-.tile .acts a,.tile .acts button{font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer;text-decoration:none}
-.check{display:flex;gap:8px;align-items:center;font-weight:400}.check input{width:auto}
-code{background:var(--soft);padding:1px 6px;border-radius:6px}
-</style>
+<script>try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>
+<link rel="stylesheet" href="/tailwind.css">
 </head>
-<body>
-<header>
-  <h1>Teman Seller Studio <small>generate gambar via kenari.id</small></h1>
-  <div class="budget" id="budget"></div>
-</header>
-<nav role="tablist">
-  <button role="tab" data-tab="gen" aria-selected="true">Generate</button>
-  <button role="tab" data-tab="edit" aria-selected="false">Edit gambar</button>
-  <button role="tab" data-tab="gal" aria-selected="false">Galeri</button>
-  <button role="tab" data-tab="set" aria-selected="false">Style &amp; MCP</button>
-</nav>
-<main>
-<section id="gen" class="on">
-  <div class="card">
-    <label for="g-prompt">Prompt</label>
-    <textarea id="g-prompt" placeholder="Contoh: ilustrasi maskot kucing seller online kewalahan dikejar notifikasi chat, gaya flat warm"></textarea>
-    <div class="row">
-      <div><label for="g-model">Model</label><select id="g-model"></select></div>
-      <div><label for="g-n">Jumlah (maks <span class="maxn"></span>)</label><input id="g-n" type="number" min="1" value="1"></div>
-      <div><label for="g-title">Judul file</label><input id="g-title" placeholder="Maskot Notifikasi"></div>
-    </div>
-    <label>Ukuran (petunjuk)</label>
-    <div class="chips" id="g-sizes"></div>
-    <input id="g-size" placeholder="1024x1024" style="margin-top:8px">
-    <label class="check" style="margin-top:12px"><input type="checkbox" id="g-style" checked> Pakai Style Guide Teman Seller</label>
-    <label class="check"><input type="checkbox" id="g-opaque"> Latar transparan (PNG)</label>
-    <div class="est" id="g-est"></div>
-    <label class="check" id="g-appr-wrap" hidden><input type="checkbox" id="g-appr"> Owner (Aditya) sudah menyetujui biaya ini</label>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-      <button class="btn" id="g-go">Generate</button>
-      <button class="btn ghost" id="g-five">Mode 5 opsi</button>
-    </div>
-    <div class="msg" id="g-msg"></div>
-  </div>
-  <div class="grid" id="g-out"></div>
-</section>
+<body class="bg-graylight font-sans text-base text-body antialiased dark:bg-bodydark dark:text-[#AEB7C0]">
+<div class="flex min-h-screen">
 
-<section id="edit">
-  <div class="card">
-    <label>Gambar sumber</label>
-    <div id="e-src" class="msg">Belum dipilih. Pilih dari tab Galeri (tombol Edit) atau unggah file di bawah.</div>
-    <input type="file" id="e-file" accept="image/png,image/jpeg,image/webp" style="margin-top:8px">
-    <label for="e-prompt">Perubahan yang diinginkan</label>
-    <textarea id="e-prompt" placeholder="Contoh: ubah latar menjadi warna krem, tambahkan bayangan lembut"></textarea>
-    <div class="row">
-      <div><label for="e-model">Model</label><select id="e-model"></select></div>
-      <div><label for="e-n">Jumlah</label><input id="e-n" type="number" min="1" value="1"></div>
-      <div><label for="e-title">Judul file</label><input id="e-title" placeholder="Edit Maskot"></div>
+  <!-- Sidebar -->
+  <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-sidebar transition-transform lg:static lg:translate-x-0">
+    <div class="flex items-center gap-3 px-6 py-6">
+      <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-lg font-bold text-white">T</div>
+      <div><div class="text-base font-semibold text-white">Teman Seller</div><div class="text-xs text-[#8A99AF]">Studio Gambar</div></div>
     </div>
-    <div class="est" id="e-est"></div>
-    <label class="check" id="e-appr-wrap" hidden><input type="checkbox" id="e-appr"> Owner (Aditya) sudah menyetujui biaya ini</label>
-    <button class="btn" id="e-go">Edit gambar</button>
-    <div class="msg" id="e-msg"></div>
-  </div>
-  <div class="grid" id="e-out"></div>
-</section>
+    <nav class="flex-1 space-y-1 px-4 text-[#DEE4EE]">
+      <p class="px-4 pb-2 pt-2 text-xs font-semibold uppercase tracking-wide text-[#8A99AF]">Menu</p>
+      <a class="nav-link" href="#dash" data-nav="dash"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg>Dashboard</a>
+      <a class="nav-link" href="#gen" data-nav="gen"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path d="M12 4v16M4 12h16"/></svg>Generate</a>
+      <a class="nav-link" href="#edit" data-nav="edit"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>Edit gambar</a>
+      <a class="nav-link" href="#gal" data-nav="gal"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/></svg>Galeri</a>
+      <p class="px-4 pb-2 pt-6 text-xs font-semibold uppercase tracking-wide text-[#8A99AF]">Pengaturan</p>
+      <a class="nav-link" href="#style" data-nav="style"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path d="M12 3a9 9 0 100 18c1.5 0 2-1 1.5-2s0-2 1.5-2h2a3 3 0 003-3c0-5-3.5-11-8-11z"/></svg>Style Guide</a>
+      <a class="nav-link" href="#mcp" data-nav="mcp"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/></svg>Koneksi MCP</a>
+    </nav>
+    <div class="m-4 rounded-lg bg-[#333A48] p-4 text-xs text-[#DEE4EE]">Pengeluaran butuh persetujuan Owner. Batas harian dan ambang approval diatur di <code class="text-white">.env</code>.</div>
+  </aside>
+  <div id="scrim" class="fixed inset-0 z-30 hidden bg-black/50 lg:hidden"></div>
 
-<section id="gal">
-  <div class="card"><input id="q" placeholder="Cari prompt / nama file"></div>
-  <div class="grid" id="gal-grid"></div>
-</section>
+  <div class="flex min-w-0 flex-1 flex-col">
+    <!-- Topbar -->
+    <header class="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-stroke bg-white px-4 py-3 dark:border-strokedark dark:bg-boxdark sm:px-6">
+      <div class="flex items-center gap-3">
+        <button id="burger" class="rounded-lg border border-stroke p-2 dark:border-strokedark lg:hidden" aria-label="Menu"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <h1 id="page-title" class="text-lg font-semibold text-bodydark dark:text-white">Dashboard</h1>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="budget-pill" class="hidden rounded-full bg-graylight px-3 py-1 text-xs font-medium text-bodydark dark:bg-bodydark dark:text-white sm:inline">...</span>
+        <button id="theme" class="rounded-lg border border-stroke p-2 dark:border-strokedark" aria-label="Ganti tema"><svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg></button>
+      </div>
+    </header>
 
-<section id="set">
-  <div class="card">
-    <h3 style="margin-top:0">Style Guide visual</h3>
-    <p class="budget">Teks ini otomatis ditambahkan ke prompt (warna, karakter maskot orisinal, gaya garis). Diisi Kenzo, disetujui Owner.</p>
-    <textarea id="style" placeholder="Contoh: flat illustration hangat, palet oranye-krem, garis tebal rapi, maskot orisinal Teman Seller, tanpa teks di gambar"></textarea>
-    <button class="btn" id="style-save" style="margin-top:8px">Simpan style</button>
-    <div class="msg" id="style-msg"></div>
+    <main class="mx-auto w-full max-w-screen-xl flex-1 p-4 sm:p-6">
+
+      <!-- Dashboard -->
+      <section data-page="dash" hidden>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="card"><p class="text-sm">Terpakai hari ini</p><p id="st-spent" class="mt-2 text-2xl font-bold text-bodydark dark:text-white">-</p><p id="st-budget" class="mt-1 text-xs"></p></div>
+          <div class="card"><p class="text-sm">Sisa budget</p><p id="st-left" class="mt-2 text-2xl font-bold text-bodydark dark:text-white">-</p>
+            <div class="mt-3 h-2 overflow-hidden rounded-full bg-graylight dark:bg-bodydark"><div id="st-bar" class="h-2 rounded-full bg-primary" style="width:0%"></div></div></div>
+          <div class="card"><p class="text-sm">Total gambar</p><p id="st-count" class="mt-2 text-2xl font-bold text-bodydark dark:text-white">-</p><p class="mt-1 text-xs">di galeri</p></div>
+          <div class="card"><p class="text-sm">Model gambar</p><p id="st-models" class="mt-2 text-2xl font-bold text-bodydark dark:text-white">-</p><p id="st-key" class="mt-1 text-xs"></p></div>
+        </div>
+        <div class="mt-6 flex items-center justify-between"><h2 class="text-base font-semibold text-bodydark dark:text-white">Gambar terbaru</h2><a href="#gen" class="btn">Buat gambar</a></div>
+        <div id="dash-grid" class="mt-3 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6"></div>
+      </section>
+
+      <!-- Generate -->
+      <section data-page="gen" hidden>
+        <div class="grid gap-6 xl:grid-cols-5">
+          <div class="card xl:col-span-2">
+            <h2 class="text-base font-semibold text-bodydark dark:text-white">Generate gambar</h2>
+            <label class="lbl" for="g-prompt">Prompt</label>
+            <textarea id="g-prompt" rows="5" class="field" placeholder="Contoh: ilustrasi maskot kucing seller online kewalahan dikejar notifikasi chat, gaya flat hangat"></textarea>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="col-span-2"><label class="lbl" for="g-model">Model</label><select id="g-model" class="field"></select></div>
+              <div><label class="lbl" for="g-n">Jumlah (maks <span class="maxn"></span>)</label><input id="g-n" type="number" min="1" value="1" class="field"></div>
+              <div><label class="lbl" for="g-title">Judul file</label><input id="g-title" class="field" placeholder="Maskot Notifikasi"></div>
+            </div>
+            <label class="lbl">Ukuran (petunjuk)</label>
+            <div id="g-sizes" class="mb-2 flex flex-wrap gap-2"></div>
+            <input id="g-size" class="field" placeholder="1024x1024">
+            <label class="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" id="g-style" checked class="h-4 w-4 accent-primary"> Pakai Style Guide Teman Seller</label>
+            <label class="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" id="g-opaque" class="h-4 w-4 accent-primary"> Latar transparan (PNG)</label>
+            <div id="g-est" class="mt-4 rounded-lg bg-graylight p-3 text-sm dark:bg-bodydark"></div>
+            <label id="g-appr-wrap" hidden class="mt-3 flex items-center gap-2 rounded-lg border border-warning p-3 text-sm"><input type="checkbox" id="g-appr" class="h-4 w-4 accent-primary"> Owner (Aditya) sudah menyetujui biaya ini</label>
+            <div class="mt-4 flex flex-wrap gap-2"><button id="g-go" class="btn">Generate</button><button id="g-five" class="btn-ghost">Mode 5 opsi</button></div>
+            <p id="g-msg" class="mt-3 text-sm"></p>
+          </div>
+          <div class="xl:col-span-3">
+            <div class="card min-h-[200px]"><h2 class="mb-3 text-base font-semibold text-bodydark dark:text-white">Hasil</h2>
+              <p id="g-empty" class="text-sm">Hasil generate muncul di sini dan otomatis tersimpan di Galeri.</p>
+              <div id="g-out" class="grid grid-cols-2 gap-4 lg:grid-cols-3"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Edit -->
+      <section data-page="edit" hidden>
+        <div class="grid gap-6 xl:grid-cols-5">
+          <div class="card xl:col-span-2">
+            <h2 class="text-base font-semibold text-bodydark dark:text-white">Edit gambar</h2>
+            <label class="lbl">Gambar sumber</label>
+            <div id="e-src" class="rounded-lg border border-dashed border-stroke p-3 text-sm dark:border-strokedark">Belum dipilih. Pilih dari Galeri (tombol Edit) atau unggah file.</div>
+            <input type="file" id="e-file" accept="image/png,image/jpeg,image/webp" class="field mt-2">
+            <label class="lbl" for="e-prompt">Perubahan yang diinginkan</label>
+            <textarea id="e-prompt" rows="4" class="field" placeholder="Contoh: ubah latar menjadi krem, tambahkan bayangan lembut"></textarea>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="col-span-2"><label class="lbl" for="e-model">Model</label><select id="e-model" class="field"></select></div>
+              <div><label class="lbl" for="e-n">Jumlah</label><input id="e-n" type="number" min="1" value="1" class="field"></div>
+              <div><label class="lbl" for="e-title">Judul file</label><input id="e-title" class="field" placeholder="Edit Maskot"></div>
+            </div>
+            <div id="e-est" class="mt-4 rounded-lg bg-graylight p-3 text-sm dark:bg-bodydark"></div>
+            <label id="e-appr-wrap" hidden class="mt-3 flex items-center gap-2 rounded-lg border border-warning p-3 text-sm"><input type="checkbox" id="e-appr" class="h-4 w-4 accent-primary"> Owner (Aditya) sudah menyetujui biaya ini</label>
+            <div class="mt-4"><button id="e-go" class="btn">Edit gambar</button></div>
+            <p id="e-msg" class="mt-3 text-sm"></p>
+          </div>
+          <div class="xl:col-span-3"><div class="card min-h-[200px]"><h2 class="mb-3 text-base font-semibold text-bodydark dark:text-white">Hasil</h2><div id="e-out" class="grid grid-cols-2 gap-4 lg:grid-cols-3"></div></div></div>
+        </div>
+      </section>
+
+      <!-- Galeri -->
+      <section data-page="gal" hidden>
+        <div class="card mb-4"><input id="q" class="field" placeholder="Cari prompt atau nama file"></div>
+        <div id="gal-grid" class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5"></div>
+      </section>
+
+      <!-- Style -->
+      <section data-page="style" hidden>
+        <div class="card max-w-3xl">
+          <h2 class="text-base font-semibold text-bodydark dark:text-white">Style Guide visual</h2>
+          <p class="mt-1 text-sm">Teks ini otomatis ditambahkan ke prompt (warna, maskot orisinal, gaya garis). Diisi Kenzo, disetujui Owner.</p>
+          <textarea id="style" rows="7" class="field mt-4" placeholder="Contoh: flat illustration hangat, palet oranye-krem, garis tebal rapi, maskot orisinal Teman Seller, tanpa teks di gambar"></textarea>
+          <button id="style-save" class="btn mt-4">Simpan style</button>
+          <p id="style-msg" class="mt-3 text-sm"></p>
+        </div>
+      </section>
+
+      <!-- MCP -->
+      <section data-page="mcp" hidden>
+        <div class="card max-w-3xl">
+          <h2 class="text-base font-semibold text-bodydark dark:text-white">Hubungkan ke Claude (MCP)</h2>
+          <p class="mt-3 text-sm">Claude Code (HTTP):</p>
+          <pre class="mt-2 overflow-x-auto rounded-lg bg-sidebar p-4 text-xs text-white"><code id="mcp-http"></code></pre>
+          <p class="mt-4 text-sm">Claude Desktop (stdio): lihat README bagian MCP.</p>
+          <label class="lbl" for="token">Access token (jika server memakainya)</label>
+          <input id="token" type="password" class="field" placeholder="ACCESS_TOKEN">
+          <button id="token-save" class="btn-ghost mt-3">Simpan token di browser ini</button>
+        </div>
+      </section>
+    </main>
   </div>
-  <div class="card">
-    <h3 style="margin-top:0">Hubungkan ke Claude (MCP)</h3>
-    <p>Claude Code (HTTP):</p>
-    <p><code id="mcp-http"></code></p>
-    <p>Claude Desktop (stdio) di <code>claude_desktop_config.json</code>: lihat README bagian MCP.</p>
-    <label for="token">Access token (jika server memakainya)</label>
-    <input id="token" type="password" placeholder="ACCESS_TOKEN">
-    <button class="btn ghost" id="token-save" style="margin-top:8px">Simpan token di browser ini</button>
-  </div>
-</section>
-</main>
+</div>
 <script src="/app.js" type="module"></script>
 </body>
 </html>

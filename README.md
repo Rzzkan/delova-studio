@@ -3,7 +3,7 @@
 Aplikasi web + MCP server untuk generate dan edit gambar kebutuhan **Kantor AI Teman Seller** lewat API [kenari.id](https://kenari.id) (kompatibel OpenAI Images). Dipakai Kenzo (Illustrator) dan tim lewat Claude (MCP) atau langsung di browser.
 
 ## Fitur
-- **Web UI**: Generate, Edit gambar, Galeri, Style Guide.
+- **Web UI** bergaya admin dashboard (Tailwind CSS, palet ala TailAdmin, mode gelap, responsif): Dashboard, Generate, Edit gambar, Galeri, Style Guide, Koneksi MCP.
 - **MCP server** (Streamable HTTP di `/mcp` dan mode stdio): `generate_image`, `edit_image`, `list_image_models`, `estimate_cost`, `list_gallery`, `get_image`, `get_style_guide`, `set_style_guide`.
 - Nama file otomatis sesuai aturan kantor: `YYYY-MM-DD_Kenzo_Judul-Singkat_v1_01.png`.
 - **Penjaga biaya** (aturan kantor bagian 6, pengeluaran uang butuh persetujuan Owner):
@@ -23,6 +23,8 @@ npm test
 ```
 
 Windows PowerShell: `copy .env.example .env`.
+
+Mengubah tampilan: edit `public/*.html|js`, lalu `npm run build:css` (Tailwind CLI; `public/tailwind.css` hasil build ikut di-commit, jadi `npm start` tidak butuh build).
 
 `.env` dan folder `data/` tidak pernah masuk git. Jangan simpan API key di Drive atau repo.
 

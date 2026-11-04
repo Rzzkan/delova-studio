@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@layer components {
+  .field { @apply w-full rounded-lg border border-stroke bg-transparent px-4 py-2.5 text-sm text-bodydark outline-none transition focus:border-primary dark:border-strokedark dark:text-white dark:focus:border-primary; }
+  .lbl { @apply mb-1.5 mt-4 block text-sm font-medium text-bodydark dark:text-white; }
+  .btn { @apply inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition hover:bg-opacity-90 disabled:cursor-wait disabled:opacity-50; }
+  .btn-ghost { @apply inline-flex items-center justify-center rounded-lg border border-stroke px-5 py-2.5 text-sm font-medium text-bodydark transition hover:bg-graylight dark:border-strokedark dark:text-white dark:hover:bg-bodydark; }
+  .card { @apply rounded-xl border border-stroke bg-white p-5 shadow-card dark:border-strokedark dark:bg-boxdark; }
+  .nav-link { @apply flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium text-[#DEE4EE] transition hover:bg-[#333A48]; }
+  .nav-link.active { @apply bg-[#333A48] text-white; }
+}

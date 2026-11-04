@@ -10,12 +10,16 @@
   "scripts": {
     "start": "node src/server.js",
     "mcp:stdio": "node src/stdio.js",
-    "test": "node --test --test-force-exit --test-timeout=120000"
+    "test": "node --test --test-force-exit --test-timeout=120000",
+    "build:css": "tailwindcss -c tailwind.config.cjs -i assets/input.css -o public/tailwind.css --minify"
   },
   "license": "UNLICENSED",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "express": "^5.3.0",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
   }
 }
