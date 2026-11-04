@@ -14,7 +14,8 @@ const fail = (t) => ({ isError: true, content: [text(t)] });
 
 async function result(res, returnImages) {
   const lines = res.images.map((e) => `- ${e.id} | ${e.file} | ${baseUrl()}/files/${encodeURIComponent(e.file)}`);
-  const content = [text(`Selesai: ${res.images.length} gambar, biaya Rp${res.costIdr}.\n${lines.join('\n')}\nSemua gambar tersimpan di galeri: ${baseUrl()}`)];
+  const fb = res.fallbackFrom ? `PERHATIAN: model utama ${res.fallbackFrom} gagal, hasil dibuat dengan model cadangan ${res.modelUsed}. Alasan: ${res.failures.join(' | ')}\n` : '';
+  const content = [text(`${fb}Selesai: ${res.images.length} gambar dengan ${res.modelUsed}, biaya Rp${res.costIdr}.\n${lines.join('\n')}\nSemua gambar tersimpan di galeri: ${baseUrl()}`)];
   if (returnImages) {
     for (const e of res.images) {
       const buf = await store.readImageFile(e.file);

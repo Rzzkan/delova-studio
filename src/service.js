@@ -1,6 +1,7 @@
 import * as kenari from './kenari.js';
 import * as store from './store.js';
 import * as settings from './settings.js';
+import * as log from './log.js';
 
 export class ApprovalRequired extends Error {
   constructor(message, details) {
@@ -74,27 +75,71 @@ async function withStyle(prompt, useStyle) {
   return style ? `${prompt}\n\nStyle guide Teman Seller: ${style}` : prompt;
 }
 
+// Jalankan dengan model utama; jika gagal (gangguan kenari, model bermasalah, dll.) coba model cadangan berurutan.
+// Setiap model cadangan tetap lewat penjaga biaya yang sama (batas budget + persetujuan Owner), jadi tidak ada
+// pengeluaran tersembunyi: cadangan yang lebih mahal dari yang disetujui dilewati dan dicatat di log.
+// 401/403 (key salah/dilarang) tidak memicu cadangan karena model lain tidak akan menolong.
+async function withFallback({ kind, source, model, n, approved, call }) {
+  const st = await settings.get();
+  const primaryEst = await estimate({ model, n });
+  const primary = primaryEst.model;
+  const chain = [primary, ...st.fallbackModels.filter((m) => m !== primary)];
+  const failures = [];
+  for (const [i, m] of chain.entries()) {
+    let est = primaryEst;
+    if (i > 0) {
+      try {
+        est = await estimate({ model: m, n });
+        // persetujuan Owner hanya berlaku untuk biaya yang disetujui: cadangan yang lebih mahal butuh persetujuan baru
+        await guard(est, approved && est.totalIdr !== null && primaryEst.totalIdr !== null && est.totalIdr <= primaryEst.totalIdr);
+      } catch (e) {
+        log.record({ kind, source, model: m, status: 'skipped', fallbackFrom: primary, message: e.message });
+        failures.push(`${m}: dilewati (${e.message})`);
+        continue;
+      }
+    } else {
+      await guard(est, approved);
+    }
+    const t0 = Date.now();
+    try {
+      const images = await call(m, est);
+      log.record({ kind, source, model: m, status: 'ok', ms: Date.now() - t0, fallbackFrom: i > 0 ? primary : undefined, images: images.length });
+      return { images, est, model: m, fallbackFrom: i > 0 ? primary : undefined, failures };
+    } catch (e) {
+      log.record({ kind, source, model: m, status: 'error', ms: Date.now() - t0, code: e.code, httpStatus: e.status, fallbackFrom: i > 0 ? primary : undefined, message: e.message });
+      failures.push(`${m}: ${e.message}`);
+      if (e.status === 401 || e.status === 403 || e.code === 'no_api_key') throw e;
+      if (i === chain.length - 1) {
+        if (chain.length === 1) throw e; // tanpa cadangan: pesan asli
+        const err = new Error(`Semua model gagal. ${failures.join(' | ')}`);
+        err.status = e.status;
+        throw err;
+      }
+    }
+  }
+  const err = new Error(`Tidak ada model yang bisa dipakai. ${failures.join(' | ')}`);
+  err.status = 502;
+  throw err;
+}
+
+function finish({ images, est, model, fallbackFrom, failures }, saveMeta) {
+  const costIdr = est.pricePerImageIdr === null ? 0 : est.pricePerImageIdr * images.length;
+  return store.saveBatch({ images, meta: { ...saveMeta, model, costIdr } }).then((saved) => ({
+    images: saved, costIdr, estimate: est, modelUsed: model, fallbackFrom: fallbackFrom || null, failures,
+  }));
+}
+
 export async function generateImages({ prompt, model, n = 1, size, background, title, role, useStyle = true, approved = false, source = 'web' }) {
   if (!prompt?.trim()) throw new Error('prompt wajib diisi');
-  const est = await estimate({ model, n });
-  model = est.model; // model default dari pengaturan jika tidak diisi
-  await guard(est, approved);
   const finalPrompt = await withStyle(prompt, useStyle);
-  const images = await kenari.generate({ model, prompt: finalPrompt, n: est.n, size, background });
-  const costIdr = est.pricePerImageIdr === null ? 0 : est.pricePerImageIdr * images.length;
-  const saved = await store.saveBatch({ images, meta: { kind: 'generate', model, prompt, finalPrompt, title, role, size, costIdr, source } });
-  return { images: saved, costIdr, estimate: est };
+  const r = await withFallback({ kind: 'generate', source, model, n, approved, call: (m, est) => kenari.generate({ model: m, prompt: finalPrompt, n: est.n, size, background }) });
+  return finish(r, { kind: 'generate', prompt, finalPrompt, title, role, size, source });
 }
 
 export async function editImages({ prompt, sources, mask, model, n = 1, size, quality, title, role, useStyle = false, approved = false, source = 'web' }) {
   if (!prompt?.trim()) throw new Error('prompt wajib diisi');
   if (!sources?.length) throw new Error('minimal satu gambar sumber');
-  const est = await estimate({ model, n });
-  model = est.model; // model default dari pengaturan jika tidak diisi
-  await guard(est, approved);
   const finalPrompt = await withStyle(prompt, useStyle);
-  const images = await kenari.edit({ model, prompt: finalPrompt, images: sources, mask, n: est.n, size, quality });
-  const costIdr = est.pricePerImageIdr === null ? 0 : est.pricePerImageIdr * images.length;
-  const saved = await store.saveBatch({ images, meta: { kind: 'edit', model, prompt, finalPrompt, title, role, size, costIdr, source } });
-  return { images: saved, costIdr, estimate: est };
+  const r = await withFallback({ kind: 'edit', source, model, n, approved, call: (m, est) => kenari.edit({ model: m, prompt: finalPrompt, images: sources, mask, n: est.n, size, quality }) });
+  return finish(r, { kind: 'edit', prompt, finalPrompt, title, role, size, source });
 }

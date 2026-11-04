@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const models = JSON.parse(readFileSync(new URL('./fixtures/models.json', import.meta.url), 'utf8'));
-let mock, base, app, appBase, calls = [], failNext = false;
+let mock, base, app, appBase, calls = [], failNext = false, failModels = new Set();
 
 before(async () => {
   mock = http.createServer((req, res) => {
@@ -22,6 +22,7 @@ before(async () => {
         return res.end(JSON.stringify({ object: 'account.balance', balance_micro_idr: 25000000000, reserved_micro_idr: 1500000, available_micro_idr: 24998500000, currency: 'IDR' }));
       }
       calls.push({ url: req.url, auth: req.headers.authorization, body: Buffer.concat(chunks).toString('latin1') });
+      if (req.url.endsWith('/generations') && failModels.has(JSON.parse(Buffer.concat(chunks).toString()).model)) { res.statusCode = 503; return res.end(JSON.stringify({ error: { message: 'model sedang down', code: 'upstream_unavailable' } })); }
       if (failNext) { failNext = false; return res.end('   ' + JSON.stringify({ error: { message: 'provider gagal', code: 'upstream_error' } })); }
       let n = 1;
       if (req.url.endsWith('/generations')) n = JSON.parse(Buffer.concat(chunks).toString()).n || 1;
@@ -355,4 +356,49 @@ test('model default dari dashboard: divalidasi dan dipakai generate tanpa parame
   assert.equal((await r.json()).estimate.model, free);
   assert.match(calls.at(-1).body, new RegExp(free.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   await put({ defaultModel: 'gpt-image-2' }); // pulihkan
+});
+
+test('model cadangan: model utama gagal -> pindah ke cadangan, tercatat di log, biaya mengikuti model yang dipakai', async () => {
+  const put = (b) => fetch(appBase + '/api/settings', { method: 'PUT', headers: H, body: JSON.stringify(b) });
+  const free = models.data.filter((m) => m.id.endsWith(':free') && m.endpoints.includes('images')).map((m) => m.id);
+  assert.equal((await put({ fallbackModels: ['model-ngawur'] })).status, 400, 'harus ada di daftar kenari');
+  assert.equal((await put({ fallbackModels: ['a', 'b', 'c', 'd', 'e', 'f'] })).status, 400, 'maksimal 5');
+  assert.equal((await put({ defaultModel: free[0], fallbackModels: [free[0], free[1], 'gpt-image-2'], dailyBudgetIdr: 100000 })).status, 200);
+
+  failModels = new Set([free[0]]);
+  let r = await post('/api/generate', { prompt: 'uji cadangan', useStyle: false });
+  assert.equal(r.status, 200);
+  let b = await r.json();
+  assert.equal(b.modelUsed, free[1]);
+  assert.equal(b.fallbackFrom, free[0]);
+  assert.equal(b.costIdr, 0);
+  assert.equal(b.images[0].model, free[1]);
+
+  // semua gratis gagal -> cadangan berbayar (Rp125 <= ambang) dipakai dan dihitung biayanya
+  failModels = new Set([free[0], free[1]]);
+  r = await post('/api/generate', { prompt: 'uji cadangan 2', useStyle: false });
+  b = await r.json();
+  assert.equal(b.modelUsed, 'gpt-image-2');
+  assert.equal(b.costIdr, 125);
+
+  // semua gagal -> galat gabungan, tidak ada biaya
+  failModels = new Set([free[0], free[1], 'gpt-image-2']);
+  r = await post('/api/generate', { prompt: 'uji cadangan 3', useStyle: false });
+  assert.equal(r.status, 503);
+  assert.match((await r.json()).error, /Semua model gagal/);
+
+  // cadangan yang lebih mahal dari yang disetujui dilewati (butuh persetujuan baru)
+  await put({ fallbackModels: ['grok-imagine-image-2-0'], approvalThresholdIdr: 100 });
+  failModels = new Set([free[0]]);
+  r = await post('/api/generate', { prompt: 'uji cadangan 4', useStyle: false, approved: true });
+  assert.equal(r.status, 502, 'cadangan dilewati -> tidak ada model yang bisa dipakai');
+  const logs = await (await fetch(appBase + '/api/logs?limit=50', { headers: H })).json();
+  assert.ok(logs.some((l) => l.status === 'skipped' && l.model === 'grok-imagine-image-2-0'), 'cadangan mahal dicatat dilewati');
+  assert.ok(logs.some((l) => l.status === 'error' && l.model === free[0] && l.httpStatus === 503));
+  assert.ok(logs.some((l) => l.status === 'ok' && l.fallbackFrom === free[0]));
+  assert.ok(!JSON.stringify(logs).includes('uji cadangan'), 'log tidak memuat prompt');
+  assert.equal((await (await fetch(appBase + '/api/logs?issues=1', { headers: H })).json()).every((l) => l.status !== 'ok' || l.fallbackFrom), true);
+
+  failModels = new Set();
+  await put({ defaultModel: 'gpt-image-2', fallbackModels: [], approvalThresholdIdr: 1000, dailyBudgetIdr: 2000 }); // pulihkan
 });

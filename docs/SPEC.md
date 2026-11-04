@@ -31,6 +31,8 @@ Satu tempat untuk generate/edit gambar kebutuhan konten Teman Seller, bisa dipak
 - API key kenari: disimpan di `data/secrets.json` (izin 0600, ikut volume), menang atas `KENARI_API_KEY` di `.env`, berlaku tanpa restart. Tidak pernah dikirim balik (hanya `kn-••••1234`). Hanya admin yang login di web yang boleh mengubah; bearer `ACCESS_TOKEN` (Claude) dan MCP tidak bisa.
 - Key dicek gratis lewat `GET /v1/account/balance` sebelum disimpan. Key ditolak (401) tidak disimpan; key terbatas/bersama (403) tetap disimpan karena sah untuk generate.
 - Model default: disimpan di `data/settings.json`, divalidasi terhadap daftar model gambar kenari, dipakai web dan Claude saat `model` tidak diisi.
+- Model cadangan (maks 5, berurutan): dipakai otomatis jika model utama gagal. Tiap cadangan tetap lewat penjaga biaya; cadangan yang lebih mahal dari biaya yang disetujui dilewati. Key salah/dilarang (401/403) tidak memicu cadangan. Hasil melaporkan `modelUsed` dan `fallbackFrom`; Claude diberi peringatan di respons MCP.
+- Log pemanggilan: `data/attempts.jsonl` (waktu, model, hasil, durasi, cadangan dari, pesan galat; tanpa prompt dan tanpa key), dipangkas otomatis, tampil di Konfigurasi dan `GET /api/logs`.
 
 ## Di luar cakupan v0.1
 OAuth connector Claude.ai, mask editor, antrean/penjadwalan, upload otomatis ke Drive.

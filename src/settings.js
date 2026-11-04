@@ -7,6 +7,7 @@ const file = () => join(config.dataDir, 'settings.json');
 
 export const defaults = () => ({
   defaultModel: config.defaultModel,
+  fallbackModels: config.fallbackModels,
   dailyBudgetIdr: config.dailyBudgetIdr,
   weeklyBudgetIdr: config.weeklyBudgetIdr,
   monthlyBudgetIdr: config.monthlyBudgetIdr,
@@ -51,6 +52,15 @@ export async function set(patch) {
       throw err;
     }
     next.defaultModel = String(patch.defaultModel);
+  }
+  if (patch.fallbackModels !== undefined) {
+    const list = patch.fallbackModels;
+    if (!Array.isArray(list) || list.length > 5 || !list.every((m) => typeof m === 'string' && MODEL_RE.test(m))) {
+      const err = new Error('fallbackModels harus daftar maksimal 5 ID model yang valid');
+      err.status = 400;
+      throw err;
+    }
+    next.fallbackModels = [...new Set(list)];
   }
   await mkdir(config.dataDir, { recursive: true });
   await writeFile(file() + '.tmp', JSON.stringify(next, null, 2));

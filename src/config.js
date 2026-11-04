@@ -19,6 +19,8 @@ export const config = {
   adminPassword: process.env.ADMIN_PASSWORD || '',
   sessionHours: num(process.env.SESSION_HOURS, 168),
   defaultModel: process.env.DEFAULT_MODEL || 'gpt-image-2',
+  // Model cadangan (urut), dipakai otomatis jika model utama gagal. Daftar dipisah koma. Bisa diubah di Dashboard > Konfigurasi.
+  fallbackModels: (process.env.FALLBACK_MODELS || '').split(',').map((x) => x.trim()).filter(Boolean),
   dataDir: resolve(root, process.env.DATA_DIR || 'data'),
   // Aturan kantor: pengeluaran uang butuh persetujuan Owner.
   // Nilai awal batas biaya. Bisa diubah di Dashboard > Batas Biaya (disimpan di data/settings.json). 0 = tanpa batas.

@@ -188,15 +188,19 @@ async function loadConfig(refresh = false) {
   if (refresh || !models.length) models = await api(`/models${refresh ? '?refresh=1' : ''}`).catch(() => models);
   pickModel = cfg.defaultModel;
   renderModels();
+  fb = (await api('/settings')).settings.fallbackModels || [];
+  renderFallback();
+  loadLogs();
 }
 function initConfig() {
+  initFallback();
   $('#m-filter').oninput = renderModels;
   $('#m-refresh').onclick = async () => { $('#m-msg').className = PLAIN; $('#m-msg').textContent = 'Memuat…'; await loadConfig(true); fillModelSelects(); $('#m-msg').textContent = ''; };
   $('#m-save').onclick = async () => {
     const msg = $('#m-msg');
     try {
       await api('/settings', { method: 'PUT', body: JSON.stringify({ defaultModel: pickModel }) });
-      await refreshConfig(); fillModelSelects(); renderModels(); estimate('g'); estimate('e');
+      await refreshConfig(); fillModelSelects(); renderModels(); renderFallback(); estimate('g'); estimate('e');
       msg.className = OK; msg.textContent = `Model default sekarang ${cfg.defaultModel}. Berlaku untuk web dan Claude.`;
     } catch (e) { msg.className = ERR; msg.textContent = e.message; }
   };
@@ -224,6 +228,54 @@ function initConfig() {
   };
 }
 
+/* ---------- model cadangan + log ---------- */
+let fb = [];
+function renderFallback() {
+  const name = (id) => models.find((m) => m.id === id)?.name || id;
+  const rows = fb.map((id, i) => {
+    const li = document.createElement('li');
+    li.className = 'flex items-center gap-2 rounded-lg border border-stroke p-2 text-sm dark:border-strokedark';
+    const t = document.createElement('span'); t.className = 'min-w-0 flex-1 truncate'; t.textContent = `${i + 1}. ${name(id)}`; t.title = id;
+    const mk = (label, fn, dis) => Object.assign(document.createElement('button'), { type: 'button', textContent: label, disabled: dis, className: 'rounded border border-stroke px-2 py-1 text-xs disabled:opacity-30 dark:border-strokedark', onclick: fn });
+    li.append(t, mk('↑', () => { [fb[i - 1], fb[i]] = [fb[i], fb[i - 1]]; renderFallback(); }, i === 0), mk('↓', () => { [fb[i + 1], fb[i]] = [fb[i], fb[i + 1]]; renderFallback(); }, i === fb.length - 1), mk('✕', () => { fb.splice(i, 1); renderFallback(); }));
+    return li;
+  });
+  $('#f-list').replaceChildren(...rows);
+  if (!rows.length) $('#f-list').innerHTML = '<li class="text-sm">Belum ada cadangan. Jika model default gagal, permintaan langsung gagal.</li>';
+  const avail = models.filter((m) => m.id !== cfg.defaultModel && !fb.includes(m.id));
+  $('#f-add').replaceChildren(...avail.map((m) => Object.assign(document.createElement('option'), { value: m.id, textContent: `${m.name} (${m.pricePerImageIdr === 0 ? 'gratis' : rp(m.pricePerImageIdr)})` })));
+  $('#f-add-btn').disabled = !avail.length || fb.length >= 5;
+}
+const WIB = (iso) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+async function loadLogs() {
+  const rows = await api(`/logs?limit=60${$('#l-issues').checked ? '&issues=1' : ''}`).catch(() => []);
+  const ST = { ok: ['Berhasil', 'text-success'], error: ['Gagal', 'text-danger'], skipped: ['Dilewati', 'text-warning'] };
+  $('#l-list').replaceChildren(...rows.map((r) => {
+    const d = document.createElement('div'); d.className = 'rounded-lg border border-stroke p-2 dark:border-strokedark';
+    const [label, cls] = ST[r.status] || [r.status, ''];
+    const top = document.createElement('div'); top.className = 'flex flex-wrap items-center gap-x-2';
+    top.innerHTML = '<b class="status"></b><span class="model font-medium text-bodydark dark:text-white"></span><span class="meta ml-auto"></span>';
+    const st = top.querySelector('.status'); st.textContent = label; st.className = `status ${cls}`;
+    top.querySelector('.model').textContent = r.model;
+    top.querySelector('.meta').textContent = `${WIB(r.at)} · ${r.kind} · ${r.source}${r.ms ? ` · ${(r.ms / 1000).toFixed(1)}s` : ''}`;
+    d.append(top);
+    const note = [r.fallbackFrom ? `cadangan dari ${r.fallbackFrom}` : '', r.message || ''].filter(Boolean).join(' · ');
+    if (note) { const n = document.createElement('div'); n.className = 'mt-1 break-words'; n.textContent = note; d.append(n); }
+    return d;
+  }));
+  if (!rows.length) $('#l-list').textContent = 'Belum ada log.';
+}
+function initFallback() {
+  $('#f-add-btn').onclick = () => { if ($('#f-add').value && fb.length < 5) { fb.push($('#f-add').value); renderFallback(); } };
+  $('#f-save').onclick = async () => {
+    const msg = $('#f-msg');
+    try { await api('/settings', { method: 'PUT', body: JSON.stringify({ fallbackModels: fb }) }); msg.className = OK; msg.textContent = fb.length ? `Tersimpan. Urutan cadangan: ${fb.length} model.` : 'Tersimpan. Cadangan dinonaktifkan.'; }
+    catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
+  $('#l-refresh').onclick = loadLogs;
+  $('#l-issues').onchange = loadLogs;
+}
+
 async function estimate(prefix) {
   const model = $(`#${prefix}-model`).value, n = $(`#${prefix}-n`).value || 1;
   if (!model) return;
@@ -240,7 +292,7 @@ async function run(prefix, path, payload, outId) {
   btn.disabled = true; msg.className = PLAIN; msg.textContent = 'Memproses… bisa sampai beberapa menit.';
   try {
     const r = await api(path, { method: 'POST', body: JSON.stringify(payload) });
-    msg.className = OK; msg.textContent = `Selesai. ${r.images.length} gambar, biaya ${rp(r.costIdr)}. Tersimpan di Galeri.`;
+    msg.className = OK; msg.textContent = `Selesai. ${r.images.length} gambar, biaya ${rp(r.costIdr)}. Tersimpan di Galeri.` + (r.fallbackFrom ? ` Model utama ${r.fallbackFrom} gagal, dipakai cadangan ${r.modelUsed}.` : '');
     $(outId).replaceChildren(...r.images.map(tile));
     if ($('#g-empty')) $('#g-empty').hidden = true;
   } catch (e) { msg.className = ERR; msg.textContent = e.message; }
@@ -316,7 +368,7 @@ async function init() {
   };
   $('#budget-reset').onclick = async () => {
     const { defaults } = await api('/settings');
-    const { defaultModel, ...budgetOnly } = defaults; // model default diatur di menu Konfigurasi
+    const { defaultModel, fallbackModels, ...budgetOnly } = defaults; // model default diatur di menu Konfigurasi
     await api('/settings', { method: 'PUT', body: JSON.stringify(budgetOnly) });
     $('#budget-msg').className = OK; $('#budget-msg').textContent = 'Dikembalikan ke nilai awal dari .env.'; await loadBudget();
   };

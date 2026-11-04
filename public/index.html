@@ -160,6 +160,27 @@
             <p id="m-msg" class="mt-3 text-sm"></p>
           </div>
         </div>
+        <div class="mt-6 grid gap-6 xl:grid-cols-2">
+          <div class="card">
+            <h2 class="text-base font-semibold text-bodydark dark:text-white">Model cadangan</h2>
+            <p class="mt-1 text-sm">Jika model default gagal (gangguan kenari, model bermasalah), server otomatis mencoba model cadangan sesuai urutan. Cadangan tetap tunduk pada batas biaya dan persetujuan Owner: cadangan yang lebih mahal dari yang disetujui dilewati. Maksimal 5.</p>
+            <ol id="f-list" class="mt-4 space-y-2"></ol>
+            <div class="mt-3 flex gap-2"><select id="f-add" class="field mt-0"></select><button id="f-add-btn" type="button" class="btn-ghost shrink-0">Tambah</button></div>
+            <div class="mt-4 flex items-center gap-3"><button id="f-save" type="button" class="btn">Simpan cadangan</button></div>
+            <p id="f-msg" class="mt-3 text-sm"></p>
+          </div>
+          <div class="card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h2 class="text-base font-semibold text-bodydark dark:text-white">Log pemanggilan kenari</h2>
+                <p class="mt-1 text-sm">Setiap generate/edit dicatat: model, hasil, durasi, dan perpindahan ke cadangan. Prompt tidak dicatat.</p>
+              </div>
+              <button id="l-refresh" type="button" class="btn-ghost shrink-0">Segarkan</button>
+            </div>
+            <label class="mt-3 flex items-center gap-2 text-xs"><input id="l-issues" type="checkbox"> Hanya yang gagal / pakai cadangan</label>
+            <div id="l-list" class="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1 text-xs"></div>
+          </div>
+        </div>
       </section>
 
       <!-- Batas biaya -->

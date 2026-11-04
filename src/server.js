@@ -11,6 +11,7 @@ import { detectMime } from './kenari.js';
 import { verify, signedUrl } from './share.js';
 import * as settings from './settings.js';
 import * as secrets from './secrets.js';
+import * as log from './log.js';
 import { COOKIE, loginEnabled, safeEqual, checkCredentials, makeToken, readToken, parseCookies, setCookie, clearCookie } from './auth.js';
 
 const fails = new Map(); // ip -> { n, until } : pembatas percobaan login
@@ -110,11 +111,12 @@ export function createApp() {
   });
   api.put('/settings', async (req, res, next) => {
     try {
-      const m = req.body?.defaultModel;
-      if (m !== undefined) {
+      const ids = [req.body?.defaultModel, ...(Array.isArray(req.body?.fallbackModels) ? req.body.fallbackModels : [])].filter((x) => x !== undefined);
+      if (ids.length) {
         // Pastikan model ada di daftar kenari. Jika daftar tidak bisa diambil, terima apa adanya.
         const list = await kenari.listImageModels({ force: true }).catch(() => null);
-        if (list && !list.some((x) => x.id === m)) return res.status(400).json({ error: `Model "${m}" tidak ada di daftar model gambar kenari` });
+        const bad = list && ids.find((x) => !list.some((m) => m.id === x));
+        if (bad) return res.status(400).json({ error: `Model "${bad}" tidak ada di daftar model gambar kenari` });
       }
       res.json({ settings: await settings.set(req.body || {}) });
     } catch (e) { next(e); }
@@ -148,6 +150,7 @@ export function createApp() {
       res.json(await signedUrl(e, { ttlMinutes: Number(req.body?.ttlMinutes) || 60 }));
     } catch (e) { e.status = e.status || 400; next(e); }
   });
+  api.get('/logs', (req, res) => res.json(log.recent({ limit: Number(req.query.limit) || 100, onlyIssues: req.query.issues === '1' })));
   api.get('/models', async (req, res, next) => {
     try { res.json(await kenari.listImageModels({ force: req.query.refresh === '1' })); } catch (e) { next(e); }
   });
