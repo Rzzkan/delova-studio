@@ -12,4 +12,7 @@ services:
     ports:
       - "127.0.0.1:${HOST_PORT:?isi HOST_PORT dengan port kosong}:3000"   # hanya localhost, diakses lewat reverse proxy
     volumes:
-      - ./data:/app/data      # gambar + index; dihapus otomatis tiap 7 hari oleh aplikasi
+      - studio-data:/app/data   # volume Docker (izin benar untuk user node); gambar dihapus otomatis tiap 7 hari
+
+volumes:
+  studio-data:

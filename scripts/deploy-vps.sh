@@ -20,18 +20,19 @@ fi
 
 say "1/5 File .env"
 NEWTOK=""
-if [ ! -f .env ]; then
+setenv() { # setenv NAMA NILAI : ubah/tambah baris di .env tanpa mengubah baris lain
+  if grep -q "^$1=" .env; then V="$2" N="$1" awk 'BEGIN{FS=OFS="="} $1==ENVIRON["N"]{print $1, ENVIRON["V"]; next} {print}' .env > .env.tmp && cat .env.tmp > .env && rm -f .env.tmp
+  else printf '%s=%s\n' "$1" "$2" >> .env; fi
+}
+[ -f .env ] || { cp .env.example .env; echo ".env dibuat dari .env.example"; }
+chmod 600 .env
+if ! grep -qE '^ACCESS_TOKEN=.+' .env; then   # wajib: server menolak start tanpa ini
+  NEWTOK="$(openssl rand -hex 32)"; setenv ACCESS_TOKEN "$NEWTOK"; echo "ACCESS_TOKEN dibuat"
+fi
+if ! grep -qE '^KENARI_API_KEY=kn-[^ ]{8,}' .env || grep -q 'isi-dari-dashboard' .env; then
   read -rsp "Tempel KENARI_API_KEY (tidak tampil di layar), lalu Enter: " KEY; echo
   [ -n "$KEY" ] || die "API key kosong"
-  NEWTOK="$(openssl rand -hex 32)"
-  KEY="$KEY" TOK="$NEWTOK" awk 'BEGIN{FS=OFS="="}
-    $1=="KENARI_API_KEY"{print $1, ENVIRON["KEY"]; next}
-    $1=="ACCESS_TOKEN"{print $1, ENVIRON["TOK"]; next}
-    {print}' .env.example > .env
-  chmod 600 .env
-  echo ".env dibuat (izin 600)"
-else
-  echo ".env sudah ada, dipakai apa adanya"
+  setenv KENARI_API_KEY "$KEY"; echo "KENARI_API_KEY disimpan"
 fi
 
 say "2/5 DNS ${DOMAIN}"
