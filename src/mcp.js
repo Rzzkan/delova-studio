@@ -5,6 +5,7 @@ import * as kenari from './kenari.js';
 import * as store from './store.js';
 import * as service from './service.js';
 import { ApprovalRequired } from './service.js';
+import { signedUrl } from './share.js';
 
 const baseUrl = () => config.publicUrl || `http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`;
 const text = (t) => ({ type: 'text', text: t });
@@ -115,7 +116,7 @@ export function buildMcpServer() {
     },
     wrap(async ({ query, limit }) => {
       const items = await store.listImages({ query, limit: limit ?? 20 });
-      return { content: [text(items.length ? items.map((e) => `${e.id} | ${e.file} | ${e.model} | Rp${e.costIdr} | ${(e.prompt || '').slice(0, 80)}`).join('\n') : 'Galeri kosong.')] };
+      return { content: [text(items.length ? items.map((e) => `${e.id} | ${e.file} | ${e.model} | Rp${e.costIdr} | dihapus ${e.expiresAt.slice(0, 10)} | ${(e.prompt || '').slice(0, 80)}`).join('\n') : 'Galeri kosong.')] };
     }),
   );
 
@@ -126,7 +127,22 @@ export function buildMcpServer() {
       const e = await store.getImage(id);
       if (!e) throw new Error('id tidak ditemukan');
       const buf = await store.readImageFile(e.file);
-      return { content: [text(`${e.file}\nPrompt: ${e.prompt}`), { type: 'image', data: buf.toString('base64'), mimeType: e.mime }] };
+      return { content: [text(`${e.file}\nPrompt: ${e.prompt}\nDihapus permanen: ${e.expiresAt}`), { type: 'image', data: buf.toString('base64'), mimeType: e.mime }] };
+    }),
+  );
+
+  server.registerTool(
+    'get_image_public_url',
+    {
+      description:
+        'Buat tautan HTTPS publik sementara (bertanda tangan) untuk satu gambar di galeri, agar bisa diteruskan ke Social Hub: panggil tool Threads_Hub upload_media dengan source_url = url ini, lalu pakai URL hasilnya di media_urls pada create_post/create_ig_post. Hanya mengunggah ke media library; JANGAN menayangkan/approve tanpa persetujuan Owner. Gambar bersifat sementara (dihapus permanen setelah masa simpan).',
+      inputSchema: { id: z.string(), ttl_minutes: z.number().int().min(1).max(1440).optional().describe('Masa berlaku tautan, default 60 menit.') },
+    },
+    wrap(async ({ id, ttl_minutes }) => {
+      const e = await store.getImage(id);
+      if (!e) throw new Error('id tidak ditemukan atau gambar sudah dihapus (masa simpan habis)');
+      const s = await signedUrl(e, { ttlMinutes: ttl_minutes ?? 60 });
+      return { content: [text(`source_url: ${s.url}\nTautan berlaku sampai: ${s.expiresAt}\nBerikutnya: Threads_Hub.upload_media(source_url=<url di atas>, brand=<wardrobe|kids|scarf|daily bila perlu>, filename="${e.file}")`)] };
     }),
   );
 

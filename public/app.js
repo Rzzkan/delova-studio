@@ -45,7 +45,8 @@ function tile(e, { edit = true } = {}) {
   const img = document.createElement('img'); img.loading = 'lazy'; img.src = src; img.alt = e.prompt || e.file;
   img.className = 'aspect-square w-full bg-graylight object-cover dark:bg-bodydark';
   a.append(img);
-  const info = document.createElement('div'); info.className = 'truncate px-3 pt-2 text-xs'; info.textContent = `${e.model} · ${rp(e.costIdr)}`;
+  const info = document.createElement('div'); info.className = 'truncate px-3 pt-2 text-xs'; const left = e.expiresAt ? Math.max(0, Math.ceil((new Date(e.expiresAt) - Date.now()) / 86400000)) : null;
+  info.textContent = `${e.model} · ${rp(e.costIdr)}` + (left !== null ? ` · hapus ${left}h lagi` : '');
   info.title = e.file;
   const acts = document.createElement('div'); acts.className = 'flex gap-2 px-3 pb-3 pt-2';
   const btnCls = 'rounded-md border border-stroke px-2 py-1 text-xs text-bodydark hover:bg-graylight dark:border-strokedark dark:text-white dark:hover:bg-bodydark';
@@ -82,6 +83,7 @@ async function loadDash() {
   $('#st-count').textContent = items.length;
   $('#dash-grid').replaceChildren(...items.slice(0, 6).map((e) => tile(e)));
   if (!items.length) $('#dash-grid').textContent = 'Belum ada gambar. Mulai dari menu Generate.';
+  $('#st-retention').textContent = `Gambar sementara: dihapus permanen otomatis setelah ${cfg.retentionDays} hari. Unduh yang masih dipakai.`;
 }
 
 async function estimate(prefix) {

@@ -10,6 +10,8 @@ Aplikasi web + MCP server untuk generate dan edit gambar kebutuhan **Kantor AI T
   - `DAILY_BUDGET_IDR`: batas keras harian (WIB), tidak bisa dilewati walau `approved=true`.
   - `APPROVAL_THRESHOLD_IDR`: biaya per permintaan di atas ambang ini butuh `approved=true` (diisi hanya setelah Owner setuju).
   - Gagal dari kenari (termasuk error berstatus 200) tidak dicatat sebagai biaya.
+- **Gambar bersifat sementara**: dihapus permanen otomatis setelah `RETENTION_DAYS` (default 7 hari). Penyapu berjalan saat server start dan tiap jam; gambar kedaluwarsa langsung disembunyikan dari galeri dan MCP. Hanya jejak audit (id, nama file, waktu) yang tersisa di `data/deleted.log`. Kebijakan ini ditetapkan Owner; unduh gambar yang masih dipakai sebelum waktunya.
+- **Teruskan ke Social Hub (threads.delova.id)**: tool `get_image_public_url` membuat tautan HTTPS bertanda tangan dan berbatas waktu (maks 24 jam, tidak pernah melewati masa simpan gambar). Claude lalu memanggil `upload_media(source_url=...)` milik Threads_Hub, dan memakai URL hasilnya di `create_post`/`create_ig_post`. Ini hanya mengunggah ke media library hub: tayang/approve tetap butuh persetujuan Owner.
 - Style Guide visual (`data/style.txt`) otomatis ditambahkan ke prompt.
 
 ## Mulai cepat
@@ -53,6 +55,14 @@ Mode stdio membaca `.env` di folder proyek, jadi key tidak ditaruh di config Cla
 
 ## Model dan harga (per 4 Nov 2026)
 `gpt-image-2` Rp125 (default), `nano-banana` Rp150, `qwen-image-3.0-pro` Rp150, model `agnes-image-*:free` gratis, dan lainnya. Harga selalu diambil langsung dari `GET /v1/models`, jadi tab Generate menampilkan angka terbaru.
+
+## Alur Claude: Studio -> Social Hub
+1. `generate_image` (atau `list_gallery`) untuk mendapat `id` gambar. Claude juga bisa melihat gambarnya lewat `get_image`.
+2. `get_image_public_url(id)` mengembalikan `source_url`.
+3. Threads_Hub `upload_media(source_url, brand?)` mengembalikan URL media hub.
+4. Threads_Hub `create_post`/`create_ig_post` memakai URL itu sebagai draft untuk persetujuan Owner.
+
+Syarat: server Hub harus bisa mengakses Studio lewat HTTPS publik, jadi `PUBLIC_URL` wajib diisi dan Studio harus ter-deploy (lihat bagian berikut). Di `localhost` langkah 2 menolak dengan pesan jelas.
 
 ## Deploy (butuh persetujuan Owner)
 Di VPS: set `HOST=0.0.0.0`, `ACCESS_TOKEN` yang kuat, `PUBLIC_URL`, jalankan di belakang HTTPS reverse proxy. Server menolak start jika `HOST` bukan localhost dan `ACCESS_TOKEN` kosong.

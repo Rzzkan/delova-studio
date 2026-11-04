@@ -20,5 +20,8 @@ export const config = {
   approvalThresholdIdr: num(process.env.APPROVAL_THRESHOLD_IDR, 1000),
   maxN: num(process.env.MAX_N, 5),
   requestTimeoutMs: num(process.env.REQUEST_TIMEOUT_MS, 300000),
-  publicUrl: process.env.PUBLIC_URL || '',
+  publicUrl: (process.env.PUBLIC_URL || '').replace(/\/$/, ''),
+  // Kebijakan Owner: gambar bersifat sementara, dihapus permanen setelah RETENTION_DAYS.
+  retentionDays: num(process.env.RETENTION_DAYS, 7),
+  signingSecret: process.env.SIGNING_SECRET || '',
 };

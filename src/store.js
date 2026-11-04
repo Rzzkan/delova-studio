@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, readdir, rm, stat, appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -69,6 +69,7 @@ export function saveBatch({ images, meta }) {
         file,
         mime: img.mime,
         createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + config.retentionDays * 86400000).toISOString(),
         date,
         kind: meta.kind,
         model: meta.model,
@@ -89,8 +90,12 @@ export function saveBatch({ images, meta }) {
   });
 }
 
+const expiryOf = (e) => new Date(e.expiresAt || new Date(e.createdAt).getTime() + config.retentionDays * 86400000);
+export const isExpired = (e, now = Date.now()) => expiryOf(e).getTime() <= now;
+export const withExpiry = (e) => ({ ...e, expiresAt: expiryOf(e).toISOString() });
+
 export async function listImages({ limit = 50, query } = {}) {
-  let entries = (await readIndex()).reverse();
+  let entries = (await readIndex()).filter((e) => !isExpired(e)).map(withExpiry).reverse();
   if (query) {
     const q = query.toLowerCase();
     entries = entries.filter((e) => `${e.title} ${e.prompt} ${e.file}`.toLowerCase().includes(q));
@@ -100,8 +105,8 @@ export async function listImages({ limit = 50, query } = {}) {
 
 export async function getImage(id) {
   const e = (await readIndex()).find((x) => x.id === id);
-  if (!e) return null;
-  return e;
+  if (!e || isExpired(e)) return null;
+  return withExpiry(e);
 }
 
 export function imagePath(file) {
@@ -128,4 +133,38 @@ export async function setStyle(text) {
 
 export async function countFiles() {
   return existsSync(imagesDir()) ? (await readdir(imagesDir())).length : 0;
+}
+
+/**
+ * Hapus permanen gambar yang lewat masa simpan (default 7 hari) beserta file yatim di disk.
+ * Yang disimpan hanya jejak audit kecil (id, nama file, waktu) di data/deleted.log, bukan gambarnya.
+ */
+export function sweep({ now = Date.now() } = {}) {
+  return locked(async () => {
+    await init();
+    const entries = await readIndex();
+    const keep = [], gone = [];
+    for (const e of entries) (isExpired(e, now) ? gone : keep).push(e);
+    for (const e of gone) await rm(imagePath(e.file), { force: true });
+    const known = new Set(keep.map((e) => e.file));
+    let orphans = 0;
+    for (const f of await readdir(imagesDir())) {
+      if (known.has(f) || gone.some((e) => e.file === f)) continue;
+      const st = await stat(join(imagesDir(), f));
+      if (now - st.mtimeMs > config.retentionDays * 86400000) { await rm(join(imagesDir(), f), { force: true }); orphans++; }
+    }
+    if (gone.length) {
+      await writeIndex(keep);
+      await appendFile(join(config.dataDir, 'deleted.log'), gone.map((e) => JSON.stringify({ id: e.id, file: e.file, createdAt: e.createdAt, deletedAt: new Date(now).toISOString() })).join('\n') + '\n');
+    }
+    return { deleted: gone.length, orphans };
+  });
+}
+
+export function startSweeper(intervalMs = 3600000) {
+  const run = () => sweep().then((r) => (r.deleted || r.orphans) && console.log(`Retensi: ${r.deleted} gambar + ${r.orphans} file yatim dihapus permanen`)).catch((e) => console.error('sweep gagal', e.message));
+  run();
+  const t = setInterval(run, intervalMs);
+  t.unref();
+  return t;
 }

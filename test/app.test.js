@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -28,6 +28,8 @@ before(async () => {
   process.env.KENARI_API_KEY = 'kn-test';
   process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'tss-'));
   process.env.ACCESS_TOKEN = 'rahasia';
+  process.env.PUBLIC_URL = 'https://studio.example.test';
+  process.env.RETENTION_DAYS = '7';
   process.env.DAILY_BUDGET_IDR = '2000';
   process.env.APPROVAL_THRESHOLD_IDR = '1000';
   const { createApp } = await import('../src/server.js');
@@ -118,4 +120,44 @@ test('MCP: tools terdaftar dan generate_image jalan', async () => {
 test('path traversal pada /files ditolak', async () => {
   const r = await fetch(`${appBase}/files/..%2F..%2Fpackage.json?token=rahasia`);
   assert.equal(r.status, 404);
+});
+
+test('MCP: URL publik bertanda tangan bisa diambil, dirusak/kedaluwarsa ditolak', async () => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 't', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(appBase + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer rahasia' } } }));
+  const gal = (await (await fetch(appBase + '/api/gallery', { headers: H })).json())[0];
+  assert.ok(gal.expiresAt, 'entri punya expiresAt');
+  const out = await client.callTool({ name: 'get_image_public_url', arguments: { id: gal.id, ttl_minutes: 5 } });
+  assert.ok(!out.isError, JSON.stringify(out));
+  const url = out.content[0].text.match(/source_url: (\S+)/)[1];
+  assert.ok(url.startsWith('https://studio.example.test/p/'));
+  const local = url.replace('https://studio.example.test', appBase);
+  const ok = await fetch(local); // tanpa token: cukup tanda tangan
+  assert.equal(ok.status, 200);
+  assert.match(ok.headers.get('content-type'), /image\//);
+  assert.equal((await fetch(local.replace(/sig=./, 'sig=0'))).status, 403);
+  assert.equal((await fetch(local.replace(/exp=\d+/, 'exp=1'))).status, 403);
+  await client.close();
+});
+
+test('retensi 7 hari: gambar kedaluwarsa disembunyikan lalu dihapus permanen oleh sweep', async () => {
+  const store = await import('../src/store.js');
+  const { config } = await import('../src/config.js');
+  const idx = join(config.dataDir, 'index.json');
+  const entries = JSON.parse(readFileSync(idx, 'utf8'));
+  const victim = entries[0], survivor = entries.at(-1);
+  const old = new Date(Date.now() - 8 * 86400000).toISOString();
+  victim.createdAt = old; victim.expiresAt = new Date(Date.now() - 86400000).toISOString();
+  writeFileSync(idx, JSON.stringify(entries));
+  const listed = await (await fetch(appBase + '/api/gallery?limit=200', { headers: H })).json();
+  assert.ok(!listed.some((e) => e.id === victim.id), 'kedaluwarsa tidak tampil walau belum di-sweep');
+  assert.equal((await fetch(`${appBase}/files/${victim.file}?token=rahasia`)).status, 200, 'file masih di disk sebelum sweep');
+  const r = await store.sweep();
+  assert.ok(r.deleted >= 1);
+  assert.ok(!existsSync(store.imagePath(victim.file)), 'file terhapus permanen');
+  assert.ok(existsSync(store.imagePath(survivor.file)), 'gambar baru tetap ada');
+  assert.ok(readFileSync(join(config.dataDir, 'deleted.log'), 'utf8').includes(victim.id));
+  assert.ok(!JSON.parse(readFileSync(idx, 'utf8')).some((e) => e.id === victim.id));
 });

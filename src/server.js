@@ -9,6 +9,7 @@ import * as kenari from './kenari.js';
 import { buildMcpServer } from './mcp.js';
 import { ApprovalRequired } from './service.js';
 import { detectMime } from './kenari.js';
+import { verify } from './share.js';
 
 export function createApp() {
   const app = express();
@@ -37,6 +38,7 @@ export function createApp() {
       approvalThresholdIdr: config.approvalThresholdIdr,
       spentTodayIdr: await store.spentToday(),
       hasApiKey: Boolean(config.kenariApiKey),
+      retentionDays: config.retentionDays,
     });
   });
   api.get('/models', async (_req, res, next) => {
@@ -80,6 +82,16 @@ export function createApp() {
     auth(req, res, () => res.sendFile(store.imagePath(req.params.file), (err) => err && res.status(404).end()));
   });
 
+  // Tautan publik bertanda tangan + kedaluwarsa (untuk Social Hub). Tidak memakai token, hanya tanda tangan.
+  app.get('/p/:name', async (req, res) => {
+    const id = req.params.name.split('.')[0];
+    if (!(await verify(id, req.query.exp, req.query.sig))) return res.status(403).type('text').send('Tautan tidak valid atau sudah kedaluwarsa');
+    const entry = await store.getImage(id);
+    if (!entry) return res.status(404).type('text').send('Gambar sudah dihapus (masa simpan habis)');
+    res.set('Cache-Control', 'private, max-age=300').type(entry.mime);
+    res.sendFile(store.imagePath(entry.file), (err) => err && !res.headersSent && res.status(404).end());
+  });
+
   // MCP lewat Streamable HTTP (stateless): hubungkan dari Claude Code / klien MCP remote.
   app.post('/mcp', auth, async (req, res) => {
     const server = buildMcpServer();
@@ -105,6 +117,7 @@ export function createApp() {
 
 if (process.argv[1] === import.meta.filename) {
   await store.init();
+  store.startSweeper();
   if (!config.accessToken && config.host !== '127.0.0.1' && config.host !== 'localhost') {
     console.error('ACCESS_TOKEN wajib diisi jika HOST bukan localhost. Berhenti.');
     process.exit(1);
