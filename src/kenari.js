@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { getApiKey } from './secrets.js';
 
 export class KenariError extends Error {
   constructor(message, { status, code } = {}) {
@@ -9,9 +10,9 @@ export class KenariError extends Error {
   }
 }
 
-function authHeaders() {
-  if (!config.kenariApiKey) throw new KenariError('KENARI_API_KEY belum diisi di .env', { code: 'no_api_key' });
-  return { Authorization: `Bearer ${config.kenariApiKey}` };
+function authHeaders(key = getApiKey()) {
+  if (!key) throw new KenariError('API key kenari belum diisi. Isi di Dashboard > Konfigurasi.', { code: 'no_api_key' });
+  return { Authorization: `Bearer ${key}` };
 }
 
 // Server kenari bisa mengirim spasi (keepalive) sebelum JSON, dan error bisa datang dengan status 200.
@@ -111,4 +112,29 @@ function extractPrice(m) {
   const line = (m.pricing_lines || []).find((l) => l.unit === 'image' && l.endpoint === 'images');
   if (line && typeof line.micro_idr === 'number') return line.micro_idr / 1_000_000;
   return null; // harga tidak diketahui -> diperlakukan butuh persetujuan
+}
+
+// Tes key tanpa biaya lewat GET /v1/account/balance (micro-IDR). Key terbatas/bersama ditolak endpoint ini (403)
+// tapi tetap sah untuk generate, jadi dilaporkan sebagai 'restricted'.
+export async function checkKey(key = getApiKey()) {
+  if (!key) return { state: 'none', message: 'API key belum diisi.' };
+  try {
+    const res = await fetch(`${config.kenariBaseUrl}/account/balance`, { headers: authHeaders(key), signal: AbortSignal.timeout(20000) });
+    const b = await readJson(res);
+    return {
+      state: 'valid',
+      balanceIdr: (b.balance_micro_idr ?? 0) / 1_000_000,
+      availableIdr: (b.available_micro_idr ?? 0) / 1_000_000,
+      message: 'Koneksi berhasil.',
+    };
+  } catch (e) {
+    if (e instanceof KenariError) {
+      if (/restricted_key|shared_key/.test(`${e.code} ${e.message}`)) {
+        return { state: 'restricted', message: 'Key sah, tetapi key terbatas/bersama tidak boleh membaca saldo. Generate tetap bisa dipakai.' };
+      }
+      if (e.status === 401) return { state: 'invalid', message: 'Key ditolak kenari (salah atau sudah dicabut).' };
+      return { state: 'error', message: e.message };
+    }
+    return { state: 'error', message: `Tidak bisa menghubungi kenari: ${e.message}` };
+  }
 }

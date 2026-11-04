@@ -15,6 +15,12 @@ before(async () => {
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
       if (req.url === '/v1/models') return res.end(JSON.stringify(models));
+      if (req.url === '/v1/account/balance') {
+        const k = req.headers.authorization || '';
+        if (k.endsWith('kn-ditolak0001')) { res.statusCode = 401; return res.end(JSON.stringify({ error: { message: 'Invalid API key', code: 'invalid_api_key' } })); }
+        if (k.endsWith('kn-terbatas001')) { res.statusCode = 403; return res.end(JSON.stringify({ error: { message: 'restricted', code: 'restricted_key_not_allowed' } })); }
+        return res.end(JSON.stringify({ object: 'account.balance', balance_micro_idr: 25000000000, reserved_micro_idr: 1500000, available_micro_idr: 24998500000, currency: 'IDR' }));
+      }
       calls.push({ url: req.url, auth: req.headers.authorization, body: Buffer.concat(chunks).toString('latin1') });
       if (failNext) { failNext = false; return res.end('   ' + JSON.stringify({ error: { message: 'provider gagal', code: 'upstream_error' } })); }
       let n = 1;
@@ -288,4 +294,65 @@ test('rahasia konektor hanya ditampilkan ke admin yang login, tidak ke bearer to
   const c = ok.headers.get('set-cookie').split(';')[0];
   const viaSession = await (await fetch(appBase + '/api/config', { headers: { Cookie: c } })).json();
   assert.equal(viaSession.mcpPathSecret, 'rahasia-konektor-0123456789abcdef');
+});
+
+test('konfigurasi API key: hanya admin web, dicek ke kenari, tersamarkan, langsung dipakai, bisa dihapus', async () => {
+  const { statSync } = await import('node:fs');
+  const key = (b, headers) => fetch(appBase + '/api/kenari/key', { method: 'PUT', headers, body: JSON.stringify(b) });
+  // token mesin (Claude) tidak boleh mengubah key
+  assert.equal((await key({ apiKey: 'kn-baru-abcdef123456' }, H)).status, 403);
+  assert.equal((await fetch(appBase + '/api/kenari/key', { method: 'DELETE', headers: H })).status, 403);
+  assert.equal((await fetch(appBase + '/api/kenari/test', { method: 'POST', headers: H, body: '{}' })).status, 403);
+
+  const c = (await login({ user: 'bos', password: 'sandi-panjang-123' }, '10.6.6.6')).headers.get('set-cookie').split(';')[0];
+  const S = { Cookie: c, 'Content-Type': 'application/json' };
+  assert.equal((await key({ apiKey: 'bukan-key' }, S)).status, 400, 'format salah');
+  const rej = await key({ apiKey: 'kn-ditolak0001' }, S);
+  assert.equal(rej.status, 400, 'ditolak kenari -> tidak disimpan');
+  assert.equal((await (await fetch(appBase + '/api/config', { headers: S })).json()).apiKeySource, 'env');
+
+  const t = await (await fetch(appBase + '/api/kenari/test', { method: 'POST', headers: S, body: '{}' })).json();
+  assert.equal(t.state, 'valid');
+  assert.equal(t.balanceIdr, 25000);
+  assert.equal(t.availableIdr, 24998.5);
+
+  const restricted = await key({ apiKey: 'kn-terbatas001' }, S);
+  assert.equal(restricted.status, 200);
+  assert.equal((await restricted.json()).check.state, 'restricted');
+
+  const full = 'kn-baru-abcdef123456';
+  const okRes = await key({ apiKey: full }, S);
+  assert.equal(okRes.status, 200);
+  const okBody = await okRes.text();
+  assert.ok(!okBody.includes(full), 'key penuh tidak boleh dikirim balik');
+  const cfg = await (await fetch(appBase + '/api/config', { headers: S })).json();
+  assert.equal(cfg.apiKeySource, 'dashboard');
+  assert.equal(cfg.apiKeyMasked, 'kn-••••3456');
+  assert.ok(!JSON.stringify(cfg).includes(full));
+  assert.equal(statSync(join(process.env.DATA_DIR, 'secrets.json')).mode & 0o077, 0, 'berkas rahasia hanya bisa dibaca pemilik');
+
+  const free = models.data.find((m) => m.id.endsWith(':free') && m.endpoints.includes('images')).id; // gratis: tidak tersangkut batas harian
+  const r = await post('/api/generate', { prompt: 'pakai key baru', useStyle: false, model: free });
+  assert.equal(r.status, 200);
+  assert.equal(calls.at(-1).auth, `Bearer ${full}`, 'key dashboard langsung dipakai tanpa restart');
+
+  const del = await fetch(appBase + '/api/kenari/key', { method: 'DELETE', headers: S });
+  assert.equal((await del.json()).source, 'env');
+  await post('/api/generate', { prompt: 'kembali ke env', useStyle: false, model: free });
+  assert.equal(calls.at(-1).auth, 'Bearer kn-test');
+});
+
+test('model default dari dashboard: divalidasi dan dipakai generate tanpa parameter model', async () => {
+  const put = (b) => fetch(appBase + '/api/settings', { method: 'PUT', headers: H, body: JSON.stringify(b) });
+  assert.equal((await put({ defaultModel: 'model-ngawur' })).status, 400);
+  assert.equal((await put({ defaultModel: 'a b;c' })).status, 400);
+  const free = models.data.find((m) => m.id.endsWith(':free') && m.endpoints.includes('images')).id;
+  assert.equal((await put({ defaultModel: free })).status, 200);
+  const cfg = await (await fetch(appBase + '/api/config', { headers: H })).json();
+  assert.equal(cfg.defaultModel, free);
+  const r = await post('/api/generate', { prompt: 'tanpa model', useStyle: false });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).estimate.model, free);
+  assert.match(calls.at(-1).body, new RegExp(free.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  await put({ defaultModel: 'gpt-image-2' }); // pulihkan
 });

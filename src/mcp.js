@@ -6,6 +6,7 @@ import * as store from './store.js';
 import * as service from './service.js';
 import { ApprovalRequired } from './service.js';
 import { signedUrl } from './share.js';
+import * as settings from './settings.js';
 
 const baseUrl = () => config.publicUrl || `http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`;
 const text = (t) => ({ type: 'text', text: t });
@@ -35,7 +36,7 @@ function wrap(fn) {
 }
 
 const common = {
-  model: z.string().optional().describe(`ID model gambar. Default ${config.defaultModel}. Lihat list_image_models.`),
+  model: z.string().optional().describe(`ID model gambar. Default ${settings.getSync().defaultModel} (diatur Owner di Dashboard > Konfigurasi). Lihat list_image_models.`),
   n: z.number().int().min(1).max(10).optional().describe('Jumlah gambar. Dibatasi pengaturan Dashboard (default 5). Aturan kantor: minta 5 untuk opsi konsep.'),
   size: z.string().optional().describe('Petunjuk ukuran, mis. 1024x1024, 1024x1280 (feed 4:5), 1024x1792 (story). Bukan jaminan.'),
   title: z.string().optional().describe('Judul singkat untuk nama file (YYYY-MM-DD_Role_Judul-Singkat_v1).'),

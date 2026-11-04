@@ -1,10 +1,12 @@
-import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { writeFile, rename, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
 
 const file = () => join(config.dataDir, 'settings.json');
 
 export const defaults = () => ({
+  defaultModel: config.defaultModel,
   dailyBudgetIdr: config.dailyBudgetIdr,
   weeklyBudgetIdr: config.weeklyBudgetIdr,
   monthlyBudgetIdr: config.monthlyBudgetIdr,
@@ -21,11 +23,14 @@ const RULES = {
   maxN: [1, 10],
 };
 
-export async function get() {
+export function getSync() {
   let saved = {};
-  try { saved = JSON.parse(await readFile(file(), 'utf8')); } catch { /* belum ada: pakai default .env */ }
+  try { saved = JSON.parse(readFileSync(file(), 'utf8')); } catch { /* belum ada: pakai default .env */ }
   return { ...defaults(), ...saved };
 }
+export async function get() { return getSync(); }
+
+const MODEL_RE = /^[A-Za-z0-9._:/-]{1,100}$/;
 
 export async function set(patch) {
   const next = await get();
@@ -38,6 +43,14 @@ export async function set(patch) {
       throw err;
     }
     next[key] = v;
+  }
+  if (patch.defaultModel !== undefined) {
+    if (!MODEL_RE.test(String(patch.defaultModel))) {
+      const err = new Error('defaultModel tidak valid');
+      err.status = 400;
+      throw err;
+    }
+    next.defaultModel = String(patch.defaultModel);
   }
   await mkdir(config.dataDir, { recursive: true });
   await writeFile(file() + '.tmp', JSON.stringify(next, null, 2));

@@ -1,4 +1,3 @@
-import { config } from './config.js';
 import * as kenari from './kenari.js';
 import * as store from './store.js';
 import * as settings from './settings.js';
@@ -21,8 +20,9 @@ async function priceOf(model) {
 export const clampN = (n, max) => Math.min(max, Math.max(1, Math.floor(Number(n) || 1)));
 const remain = (limit, spent) => (limit > 0 ? Math.max(0, limit - spent) : null); // null = tanpa batas
 
-export async function estimate({ model = config.defaultModel, n = 1 }) {
+export async function estimate({ model, n = 1 }) {
   const st = await settings.get();
+  model ||= st.defaultModel;
   const price = await priceOf(model);
   const count = clampN(n, st.maxN);
   const totalIdr = price === null ? null : price * count;
@@ -74,9 +74,10 @@ async function withStyle(prompt, useStyle) {
   return style ? `${prompt}\n\nStyle guide Teman Seller: ${style}` : prompt;
 }
 
-export async function generateImages({ prompt, model = config.defaultModel, n = 1, size, background, title, role, useStyle = true, approved = false, source = 'web' }) {
+export async function generateImages({ prompt, model, n = 1, size, background, title, role, useStyle = true, approved = false, source = 'web' }) {
   if (!prompt?.trim()) throw new Error('prompt wajib diisi');
   const est = await estimate({ model, n });
+  model = est.model; // model default dari pengaturan jika tidak diisi
   await guard(est, approved);
   const finalPrompt = await withStyle(prompt, useStyle);
   const images = await kenari.generate({ model, prompt: finalPrompt, n: est.n, size, background });
@@ -85,10 +86,11 @@ export async function generateImages({ prompt, model = config.defaultModel, n = 
   return { images: saved, costIdr, estimate: est };
 }
 
-export async function editImages({ prompt, sources, mask, model = config.defaultModel, n = 1, size, quality, title, role, useStyle = false, approved = false, source = 'web' }) {
+export async function editImages({ prompt, sources, mask, model, n = 1, size, quality, title, role, useStyle = false, approved = false, source = 'web' }) {
   if (!prompt?.trim()) throw new Error('prompt wajib diisi');
   if (!sources?.length) throw new Error('minimal satu gambar sumber');
   const est = await estimate({ model, n });
+  model = est.model; // model default dari pengaturan jika tidak diisi
   await guard(est, approved);
   const finalPrompt = await withStyle(prompt, useStyle);
   const images = await kenari.edit({ model, prompt: finalPrompt, images: sources, mask, n: est.n, size, quality });

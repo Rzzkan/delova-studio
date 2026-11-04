@@ -10,6 +10,7 @@ import { ApprovalRequired } from './service.js';
 import { detectMime } from './kenari.js';
 import { verify, signedUrl } from './share.js';
 import * as settings from './settings.js';
+import * as secrets from './secrets.js';
 import { COOKIE, loginEnabled, safeEqual, checkCredentials, makeToken, readToken, parseCookies, setCookie, clearCookie } from './auth.js';
 
 const fails = new Map(); // ip -> { n, until } : pembatas percobaan login
@@ -34,8 +35,13 @@ export function createApp() {
     const w = await who(req);
     if (!w) return res.status(401).json({ error: 'Belum login atau token salah', loginRequired: loginEnabled() });
     // Sesi berbasis cookie: tolak POST/PUT non-JSON (perlindungan CSRF tambahan di atas SameSite=Lax)
-    if (w === 'session' && !['GET', 'HEAD'].includes(req.method) && !req.is('json')) return res.status(415).json({ error: 'Content-Type harus application/json' });
+    if (w === 'session' && !['GET', 'HEAD'].includes(req.method) && !(req.headers['content-type'] || '').includes('application/json')) return res.status(415).json({ error: 'Content-Type harus application/json' });
     next();
+  };
+  // Pengaturan sensitif (API key): hanya admin yang login di web (atau server tanpa autentikasi, mode lokal).
+  const adminOnly = async (req, res, next) => {
+    if (open() || (await who(req)) === 'session') return next();
+    return res.status(403).json({ error: 'Hanya admin yang login di dashboard yang boleh mengubah ini' });
   };
   const bearerOnly = async (req, res, next) => {
     if (!config.accessToken) return open() ? next() : res.status(401).json({ error: 'ACCESS_TOKEN belum diatur di server' });
@@ -84,13 +90,14 @@ export function createApp() {
     const [st, u, w] = await Promise.all([settings.get(), store.usage(), who(req)]);
     res.json({
       ...st,
-      defaultModel: config.defaultModel,
       spentTodayIdr: u.today,
       spentWeekIdr: u.week,
       spentMonthIdr: u.month,
       weekStart: u.weekStart,
       monthStart: u.monthStart,
-      hasApiKey: Boolean(config.kenariApiKey),
+      hasApiKey: secrets.keyInfo().hasKey,
+      apiKeyMasked: secrets.keyInfo().masked,
+      apiKeySource: secrets.keyInfo().source,
       retentionDays: config.retentionDays,
       user: w === 'session' ? config.adminUser : null,
       publicUrlSet: config.publicUrl.startsWith('https://'),
@@ -102,7 +109,37 @@ export function createApp() {
     try { res.json({ settings: await settings.get(), defaults: settings.defaults() }); } catch (e) { next(e); }
   });
   api.put('/settings', async (req, res, next) => {
-    try { res.json({ settings: await settings.set(req.body || {}) }); } catch (e) { next(e); }
+    try {
+      const m = req.body?.defaultModel;
+      if (m !== undefined) {
+        // Pastikan model ada di daftar kenari. Jika daftar tidak bisa diambil, terima apa adanya.
+        const list = await kenari.listImageModels({ force: true }).catch(() => null);
+        if (list && !list.some((x) => x.id === m)) return res.status(400).json({ error: `Model "${m}" tidak ada di daftar model gambar kenari` });
+      }
+      res.json({ settings: await settings.set(req.body || {}) });
+    } catch (e) { next(e); }
+  });
+
+  // ---- API key kenari (hanya admin web; nilainya tidak pernah dikembalikan) ----
+  api.put('/kenari/key', adminOnly, async (req, res, next) => {
+    try {
+      const key = String(req.body?.apiKey || '').trim();
+      if (!secrets.KEY_RE.test(key)) return res.status(400).json({ error: 'Format API key tidak valid. Key kenari diawali "kn-" tanpa spasi.' });
+      const check = await kenari.checkKey(key);
+      if (check.state === 'invalid') return res.status(400).json({ error: check.message });
+      secrets.setApiKey(key);
+      res.json({ ...secrets.keyInfo(), check, verified: check.state === 'valid' || check.state === 'restricted' });
+    } catch (e) { next(e); }
+  });
+  api.delete('/kenari/key', adminOnly, (_req, res, next) => {
+    try { secrets.clearApiKey(); res.json(secrets.keyInfo()); } catch (e) { next(e); }
+  });
+  api.post('/kenari/test', adminOnly, async (req, res, next) => {
+    try {
+      const cand = req.body?.apiKey ? String(req.body.apiKey).trim() : undefined;
+      if (cand && !secrets.KEY_RE.test(cand)) return res.status(400).json({ error: 'Format API key tidak valid' });
+      res.json(await kenari.checkKey(cand));
+    } catch (e) { next(e); }
   });
   api.post('/share', async (req, res, next) => {
     try {
@@ -111,11 +148,11 @@ export function createApp() {
       res.json(await signedUrl(e, { ttlMinutes: Number(req.body?.ttlMinutes) || 60 }));
     } catch (e) { e.status = e.status || 400; next(e); }
   });
-  api.get('/models', async (_req, res, next) => {
-    try { res.json(await kenari.listImageModels()); } catch (e) { next(e); }
+  api.get('/models', async (req, res, next) => {
+    try { res.json(await kenari.listImageModels({ force: req.query.refresh === '1' })); } catch (e) { next(e); }
   });
   api.get('/estimate', async (req, res, next) => {
-    try { res.json(await service.estimate({ model: req.query.model || config.defaultModel, n: req.query.n })); } catch (e) { next(e); }
+    try { res.json(await service.estimate({ model: req.query.model, n: req.query.n })); } catch (e) { next(e); }
   });
   api.post('/generate', async (req, res, next) => {
     try { res.json(await service.generateImages({ ...req.body, useStyle: req.body.useStyle ?? true, source: 'web' })); } catch (e) { next(e); }
@@ -210,6 +247,6 @@ if (process.argv[1] === import.meta.filename) {
   }
   createApp().listen(config.port, config.host, () => {
     console.log(`Teman Seller Studio: http://${config.host}:${config.port}  (MCP: /mcp)`);
-    if (!config.kenariApiKey) console.warn('Peringatan: KENARI_API_KEY belum diisi.');
+    if (!secrets.getApiKey()) console.warn('Peringatan: API key kenari belum diisi (isi di Dashboard > Konfigurasi atau KENARI_API_KEY di .env).');
   });
 }

@@ -1,6 +1,6 @@
 const $ = (s) => document.querySelector(s);
 const SIZES = [['Feed 4:5', '1024x1280'], ['Persegi', '1024x1024'], ['Story 9:16', '1024x1792'], ['Thumbnail 16:9', '1792x1024']];
-const TITLES = { dash: 'Dashboard', gen: 'Generate', edit: 'Edit gambar', gal: 'Galeri', budget: 'Batas Biaya', style: 'Style Guide', mcp: 'Koneksi MCP' };
+const TITLES = { dash: 'Dashboard', gen: 'Generate', edit: 'Edit gambar', gal: 'Galeri', config: 'Konfigurasi', budget: 'Batas Biaya', style: 'Style Guide', mcp: 'Koneksi MCP' };
 const OK = 'mt-3 text-sm text-success', ERR = 'mt-3 text-sm text-danger', PLAIN = 'mt-3 text-sm';
 let cfg, models = [], editSource = null, current = null;
 
@@ -42,6 +42,7 @@ function route() {
   if (page === 'gal') loadGallery();
   if (page === 'dash') loadDash();
   if (page === 'budget') loadBudget();
+  if (page === 'config') loadConfig();
 }
 
 /* ---------- galeri: grid gambar + nama file + URL ---------- */
@@ -111,7 +112,7 @@ async function loadDash() {
     $(`#st-${k}-l`).textContent = `${label}: ${limitText(limit)}`;
     bar(`#bar-${k}`, spent, limit);
   }
-  $('#st-key').textContent = cfg.hasApiKey ? 'API key kenari terisi' : 'KENARI_API_KEY belum diisi';
+  $('#st-key').textContent = cfg.hasApiKey ? `API key kenari terisi (${cfg.apiKeyMasked})` : 'API key kenari belum diisi (menu Konfigurasi)';
   $('#st-key').className = `mt-1 text-xs ${cfg.hasApiKey ? 'text-success' : 'text-danger'}`;
   $('#st-retention').textContent = `Gambar sementara: dihapus permanen otomatis setelah ${cfg.retentionDays} hari. Unduh yang masih dipakai.`;
   const items = await api('/gallery?limit=200');
@@ -135,7 +136,92 @@ async function loadBudget() {
     const b = d.querySelector('.bg-primary'); b.style.width = `${pct}%`; if (pct >= 90) b.className = 'h-2 rounded-full bg-danger'; else if (pct >= 70) b.className = 'h-2 rounded-full bg-warning';
     return d;
   }));
-  $('#budget-key').textContent = cfg.hasApiKey ? 'API key kenari: terisi.' : 'API key kenari belum diisi (KENARI_API_KEY di .env server).';
+  $('#budget-key').textContent = cfg.hasApiKey ? `API key kenari: terisi (${cfg.apiKeyMasked}).` : 'API key kenari belum diisi. Isi di menu Konfigurasi.';
+}
+
+/* ---------- konfigurasi: API key + model default ---------- */
+let pickModel = '';
+const KEY_SRC = { dashboard: 'Dari dashboard', env: 'Dari .env server', none: 'Belum diisi' };
+function showKeyInfo(i) {
+  const has = i.hasKey ?? i.hasApiKey;
+  $('#k-masked').textContent = has ? (i.masked || i.apiKeyMasked) : 'Belum ada key';
+  const src = i.source || i.apiKeySource;
+  $('#k-source').textContent = KEY_SRC[src] || src;
+  $('#k-source').className = `rounded-full px-3 py-1 text-xs font-medium ${src === 'none' ? 'bg-danger text-white' : 'bg-graylight dark:bg-bodydark'}`;
+  $('#k-clear').classList.toggle('hidden', src !== 'dashboard');
+}
+function showCheck(c) {
+  const el = $('#k-bal');
+  if (c.state === 'valid') { el.className = 'mt-3 text-xs text-success'; el.textContent = `Terhubung. Saldo ${rp(c.balanceIdr)}, tersedia ${rp(c.availableIdr)}.`; }
+  else if (c.state === 'restricted') { el.className = 'mt-3 text-xs text-success'; el.textContent = c.message; }
+  else { el.className = 'mt-3 text-xs text-danger'; el.textContent = c.message; }
+}
+function renderModels() {
+  const q = $('#m-filter').value.trim().toLowerCase();
+  const rows = models.filter((m) => !q || `${m.name} ${m.id}`.toLowerCase().includes(q)).map((m) => {
+    const lab = document.createElement('label');
+    lab.className = 'flex cursor-pointer items-center gap-3 rounded-lg border border-stroke p-3 text-sm hover:border-primary dark:border-strokedark';
+    const r = Object.assign(document.createElement('input'), { type: 'radio', name: 'm-pick', value: m.id, checked: m.id === pickModel });
+    r.onchange = () => { pickModel = m.id; $('#m-msg').textContent = ''; };
+    const t = document.createElement('div'); t.className = 'min-w-0 flex-1';
+    const a = document.createElement('div'); a.className = 'truncate font-medium text-bodydark dark:text-white'; a.textContent = m.name;
+    const b = document.createElement('div'); b.className = 'truncate text-xs'; b.textContent = m.id;
+    t.append(a, b);
+    const p = document.createElement('span'); p.className = `shrink-0 text-xs font-medium ${m.pricePerImageIdr === 0 ? 'text-success' : ''}`;
+    p.textContent = m.pricePerImageIdr === 0 ? 'Gratis' : m.pricePerImageIdr === null ? 'harga ?' : `${rp(m.pricePerImageIdr)}/gambar`;
+    lab.append(r, t, p);
+    return lab;
+  });
+  $('#m-list').replaceChildren(...rows);
+  if (!rows.length) $('#m-list').textContent = models.length ? 'Tidak ada model yang cocok.' : 'Daftar model belum bisa dimuat dari kenari.';
+  $('#m-cur').textContent = `Aktif sekarang: ${cfg.defaultModel}`;
+}
+function fillModelSelects() {
+  for (const sel of ['#g-model', '#e-model']) {
+    $(sel).replaceChildren(...models.map((m) => Object.assign(document.createElement('option'), { value: m.id, textContent: `${m.name} (${m.pricePerImageIdr === 0 ? 'gratis' : rp(m.pricePerImageIdr)})` })));
+    $(sel).value = cfg.defaultModel;
+  }
+}
+async function loadConfig(refresh = false) {
+  await refreshConfig();
+  showKeyInfo(cfg);
+  if (refresh || !models.length) models = await api(`/models${refresh ? '?refresh=1' : ''}`).catch(() => models);
+  pickModel = cfg.defaultModel;
+  renderModels();
+}
+function initConfig() {
+  $('#m-filter').oninput = renderModels;
+  $('#m-refresh').onclick = async () => { $('#m-msg').className = PLAIN; $('#m-msg').textContent = 'Memuat…'; await loadConfig(true); fillModelSelects(); $('#m-msg').textContent = ''; };
+  $('#m-save').onclick = async () => {
+    const msg = $('#m-msg');
+    try {
+      await api('/settings', { method: 'PUT', body: JSON.stringify({ defaultModel: pickModel }) });
+      await refreshConfig(); fillModelSelects(); renderModels(); estimate('g'); estimate('e');
+      msg.className = OK; msg.textContent = `Model default sekarang ${cfg.defaultModel}. Berlaku untuk web dan Claude.`;
+    } catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
+  $('#k-test').onclick = async () => {
+    $('#k-bal').className = 'mt-3 text-xs'; $('#k-bal').textContent = 'Mengecek…';
+    try { showCheck(await api('/kenari/test', { method: 'POST', body: '{}' })); } catch (e) { showCheck({ state: 'error', message: e.message }); }
+  };
+  $('#k-save').onclick = async () => {
+    const msg = $('#k-msg'), key = $('#k-input').value.trim();
+    if (!key) { msg.className = ERR; msg.textContent = 'Tempel API key dulu.'; return; }
+    msg.className = PLAIN; msg.textContent = 'Memeriksa key ke kenari…';
+    try {
+      const r = await api('/kenari/key', { method: 'PUT', body: JSON.stringify({ apiKey: key }) });
+      $('#k-input').value = '';
+      await refreshConfig(); showKeyInfo(r); showCheck(r.check);
+      msg.className = r.verified ? OK : PLAIN;
+      msg.textContent = r.verified ? 'Key tersimpan dan sudah dipakai.' : `Key tersimpan, tetapi belum bisa diverifikasi: ${r.check.message}`;
+    } catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
+  $('#k-clear').onclick = async () => {
+    if (!confirm('Hapus key yang diisi dari dashboard? Server akan memakai KENARI_API_KEY di .env (jika ada).')) return;
+    const msg = $('#k-msg');
+    try { const r = await api('/kenari/key', { method: 'DELETE' }); await refreshConfig(); showKeyInfo(r); $('#k-bal').textContent = ''; msg.className = OK; msg.textContent = 'Key dashboard dihapus.'; }
+    catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
 }
 
 async function estimate(prefix) {
@@ -194,10 +280,8 @@ async function init() {
     if (!cfg) return;
   }
   models = await api('/models').catch(() => []);
-  for (const sel of ['#g-model', '#e-model']) {
-    $(sel).replaceChildren(...models.map((m) => Object.assign(document.createElement('option'), { value: m.id, textContent: `${m.name} (${m.pricePerImageIdr === 0 ? 'gratis' : rp(m.pricePerImageIdr)})` })));
-    $(sel).value = cfg.defaultModel;
-  }
+  fillModelSelects();
+  initConfig();
   $('#g-sizes').replaceChildren(...SIZES.map(([l, v]) => Object.assign(document.createElement('button'), {
     type: 'button', className: 'rounded-full border border-stroke px-3 py-1 text-xs text-bodydark hover:border-primary hover:text-primary dark:border-strokedark dark:text-white',
     textContent: `${l} ${v}`, onclick: () => ($('#g-size').value = v),
@@ -232,7 +316,8 @@ async function init() {
   };
   $('#budget-reset').onclick = async () => {
     const { defaults } = await api('/settings');
-    await api('/settings', { method: 'PUT', body: JSON.stringify(defaults) });
+    const { defaultModel, ...budgetOnly } = defaults; // model default diatur di menu Konfigurasi
+    await api('/settings', { method: 'PUT', body: JSON.stringify(budgetOnly) });
     $('#budget-msg').className = OK; $('#budget-msg').textContent = 'Dikembalikan ke nilai awal dari .env.'; await loadBudget();
   };
   route();

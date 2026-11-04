@@ -21,7 +21,7 @@ Butuh Node.js 20.12+.
 
 ```bash
 npm install
-cp .env.example .env     # isi KENARI_API_KEY (dari dashboard kenari.id)
+cp .env.example .env     # isi KENARI_API_KEY (dari dashboard kenari.id); atau isi nanti di web: menu Konfigurasi
 npm start                # http://127.0.0.1:3400
 npm test
 ```
