@@ -70,22 +70,36 @@ async function guard(est, approved) {
   }
 }
 
-// Style Guide: gaya dasar + (opsional) gaya terpilih. `style` = id atau nama; kosong = hanya gaya dasar.
-function withStyle(prompt, useStyle, style) {
-  if (!useStyle) return { prompt, used: [] };
-  const { text, used } = styles.compose(style);
-  return { prompt: text ? `${prompt}\n\n${text}` : prompt, used };
+// Style Guide: gaya dasar brand + (opsional) gaya pillar terpilih. `style` = id atau nama; kosong = hanya gaya dasar.
+// Brand selalu dicek (dan dicatat di galeri) walau Style Guide dimatikan. Pillar juga membawa model + cadangan sendiri.
+function withStyle(prompt, useStyle, brandRef, style) {
+  const brand = styles.pickBrand(brandRef);
+  if (!useStyle) return { prompt, used: [], brand, model: '', fallbackModels: [] };
+  const c = styles.compose(brand.id, style);
+  return { prompt: c.text ? `${prompt}\n\n${c.text}` : prompt, used: c.used, brand, model: c.model, fallbackModels: c.fallbackModels };
+}
+
+/** Pastikan ID model ada di daftar kenari (dipakai saat menyimpan konfigurasi model per pillar). */
+export async function assertModels(ids) {
+  const list = await kenari.listImageModels({ force: true }).catch(() => null); // daftar tak terjangkau: terima apa adanya
+  const bad = list && ids.filter(Boolean).find((x) => !list.some((m) => m.id === x));
+  if (bad) throw Object.assign(new Error(`Model "${bad}" tidak ada di daftar model gambar kenari`), { status: 400 });
+}
+
+export async function gallery({ query, limit, brand } = {}) {
+  const b = brand ? styles.resolveBrand(brand) : null;
+  return store.listImages({ query, limit, brand: b?.slug, fallbackBrand: styles.defaultBrand()?.slug });
 }
 
 // Jalankan dengan model utama; jika gagal (gangguan kenari, model bermasalah, dll.) coba model cadangan berurutan.
 // Setiap model cadangan tetap lewat penjaga biaya yang sama (batas budget + persetujuan Owner), jadi tidak ada
 // pengeluaran tersembunyi: cadangan yang lebih mahal dari yang disetujui dilewati dan dicatat di log.
 // 401/403 (key salah/dilarang) tidak memicu cadangan karena model lain tidak akan menolong.
-async function withFallback({ kind, source, model, n, approved, call }) {
+async function withFallback({ kind, source, model, n, approved, call, fallbackModels }) {
   const st = await settings.get();
   const primaryEst = await estimate({ model, n });
   const primary = primaryEst.model;
-  const chain = [primary, ...st.fallbackModels.filter((m) => m !== primary)];
+  const chain = [primary, ...(fallbackModels?.length ? fallbackModels : st.fallbackModels).filter((m) => m !== primary)]; // cadangan pillar menimpa cadangan global
   const failures = [];
   for (const [i, m] of chain.entries()) {
     let est = primaryEst;
@@ -131,17 +145,18 @@ function finish({ images, est, model, fallbackFrom, failures }, saveMeta) {
   }));
 }
 
-export async function generateImages({ prompt, model, n = 1, size, background, title, role, useStyle = true, style, approved = false, source = 'web' }) {
+// Urutan model: yang diminta eksplisit > model pillar (atau gaya dasar brand) > default global di Konfigurasi.
+export async function generateImages({ prompt, model, n = 1, size, background, title, role, useStyle = true, style, brand, approved = false, source = 'web' }) {
   if (!prompt?.trim()) throw new Error('prompt wajib diisi');
-  const { prompt: finalPrompt, used } = withStyle(prompt, useStyle, style);
-  const r = await withFallback({ kind: 'generate', source, model, n, approved, call: (m, est) => kenari.generate({ model: m, prompt: finalPrompt, n: est.n, size, background }) });
-  return finish(r, { kind: 'generate', prompt, finalPrompt, title, role, size, source, style: used.join(' + ') || null });
+  const w = withStyle(prompt, useStyle, brand, style);
+  const r = await withFallback({ kind: 'generate', source, model: model || w.model || undefined, fallbackModels: w.fallbackModels, n, approved, call: (m, est) => kenari.generate({ model: m, prompt: w.prompt, n: est.n, size, background }) });
+  return finish(r, { kind: 'generate', prompt, finalPrompt: w.prompt, title, role, size, source, style: w.used.join(' + ') || null, brand: w.brand.slug, brandName: w.brand.name });
 }
 
-export async function editImages({ prompt, sources, mask, model, n = 1, size, quality, title, role, useStyle = false, style, approved = false, source = 'web' }) {
+export async function editImages({ prompt, sources, mask, model, n = 1, size, quality, title, role, useStyle = false, style, brand, approved = false, source = 'web' }) {
   if (!prompt?.trim()) throw new Error('prompt wajib diisi');
   if (!sources?.length) throw new Error('minimal satu gambar sumber');
-  const { prompt: finalPrompt, used } = withStyle(prompt, useStyle, style);
-  const r = await withFallback({ kind: 'edit', source, model, n, approved, call: (m, est) => kenari.edit({ model: m, prompt: finalPrompt, images: sources, mask, n: est.n, size, quality }) });
-  return finish(r, { kind: 'edit', prompt, finalPrompt, title, role, size, source, style: used.join(' + ') || null });
+  const w = withStyle(prompt, useStyle, brand, style);
+  const r = await withFallback({ kind: 'edit', source, model: model || w.model || undefined, fallbackModels: w.fallbackModels, n, approved, call: (m, est) => kenari.edit({ model: m, prompt: w.prompt, images: sources, mask, n: est.n, size, quality }) });
+  return finish(r, { kind: 'edit', prompt, finalPrompt: w.prompt, title, role, size, source, style: w.used.join(' + ') || null, brand: w.brand.slug, brandName: w.brand.name });
 }

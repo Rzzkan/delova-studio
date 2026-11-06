@@ -105,6 +105,8 @@ export function saveBatch({ images, meta }) {
         size: meta.size || null,
         source: meta.source || 'web',
         style: meta.style || null,
+        brand: meta.brand || null,
+        brandName: meta.brandName || null,
         // biaya dibagi rata per gambar; biaya batch dicatat di gambar pertama agar total tetap akurat
         costIdr: i === 0 ? meta.costIdr : 0,
         batch: `${prefix}_v${version}`,
@@ -122,11 +124,14 @@ const expiryOf = (e) => new Date(e.expiresAt || new Date(e.createdAt).getTime() 
 export const isExpired = (e, now = Date.now()) => expiryOf(e).getTime() <= now;
 export const withExpiry = (e) => ({ ...e, expiresAt: expiryOf(e).toISOString() });
 
-export async function listImages({ limit = 50, query } = {}) {
+// brand = slug brand untuk menyaring; fallbackBrand = brand untuk gambar lama yang dibuat sebelum ada multi-brand.
+export async function listImages({ limit = 50, query, brand, fallbackBrand } = {}) {
   let entries = (await readIndex()).filter((e) => !isExpired(e)).map(withExpiry).reverse();
+  if (fallbackBrand) entries = entries.map((e) => (e.brand ? e : { ...e, brand: fallbackBrand }));
+  if (brand) entries = entries.filter((e) => e.brand === brand);
   if (query) {
     const q = query.toLowerCase();
-    entries = entries.filter((e) => `${e.title} ${e.prompt} ${e.file}`.toLowerCase().includes(q));
+    entries = entries.filter((e) => `${e.title} ${e.prompt} ${e.file} ${e.brandName || ''} ${e.style || ''}`.toLowerCase().includes(q));
   }
   return entries.slice(0, limit);
 }

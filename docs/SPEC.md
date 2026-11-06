@@ -34,14 +34,19 @@ Satu tempat untuk generate/edit gambar kebutuhan konten Teman Seller, bisa dipak
 - Model cadangan (maks 5, berurutan): dipakai otomatis jika model utama gagal. Tiap cadangan tetap lewat penjaga biaya; cadangan yang lebih mahal dari biaya yang disetujui dilewati. Key salah/dilarang (401/403) tidak memicu cadangan. Hasil melaporkan `modelUsed` dan `fallbackFrom`; Claude diberi peringatan di respons MCP.
 - Log pemanggilan: `data/attempts.jsonl` (waktu, model, hasil, durasi, cadangan dari, pesan galat; tanpa prompt dan tanpa key), dipangkas otomatis, tampil di Konfigurasi dan `GET /api/logs`.
 
-## Style Guide jamak
-- Satu **gaya dasar** (selalu ditambahkan jika Style Guide aktif) + banyak gaya per content pillar/kebutuhan, dipilih saat generate (web: dropdown; MCP: parameter `style`). Disimpan di database SQLite `data/studio.db` (`node:sqlite` bawaan Node >= 22.13, tanpa dependensi), lengkap dengan riwayat revisi (siapa, kapan, isi). `styles.json`/`style.txt` lama dimigrasi otomatis sekali jalan.
-- Tombol "Buat dari 7 Content Pillar" menambah draf arah visual untuk 7 pilar (tidak menimpa yang ada). Draf perlu disetujui Owner.
-- Claude mengelola Style Guide penuh lewat MCP tanpa browser: `list_style_guides`, `get_style_guide`, `set_style_guide` (tambah/ubah, `base=true` untuk gaya dasar), `style_guide_history`, `restore_style_guide` (pulihkan yang dihapus atau kembalikan ke revisi), `delete_style_guide` (hapus lunak; butuh `approved=true` setelah Owner setuju). Perubahan Claude tercatat sebagai "claude (MCP)" dan terlihat di dashboard.
-- Model gratis (Rp0) tidak terhalang batas budget.
+## Multi-brand, Style Guide, dan model per pillar
+- **Brand**: satu studio melayani banyak brand (tabel `brands`: id, slug, nama, catatan, `is_default`, hapus lunak). Tepat satu brand default; tidak bisa dihapus atau dimatikan selain dengan menjadikan brand lain default. Brand default dibuat otomatis di database baru (`DEFAULT_BRAND_NAME`). Database lama dinaikkan otomatis: style lama menjadi milik brand default, indeks nama unik global diganti unik per brand.
+- Tiap brand punya satu **gaya dasar** (selalu ditambahkan jika Style Guide aktif) + banyak gaya per content pillar/kebutuhan, dipilih saat generate (web: dropdown; MCP: parameter `style`). Nama pillar unik per brand (boleh sama di brand lain), maksimal 30 style per brand dan 20 brand. Disimpan di SQLite `data/studio.db` (`node:sqlite` bawaan Node >= 22.13) dengan riwayat revisi (siapa, kapan, isi, model).
+- **Model per pillar**: tiap style punya `model` + `fallbackModels` (maks 5) opsional, divalidasi terhadap daftar model kenari saat disimpan. Urutan saat generate/edit: model eksplisit di permintaan > model pillar terpilih > model gaya dasar brand > default global. `useStyle=false` mematikan model pillar juga. Cadangan pillar (jika ada) menimpa cadangan global; tiap cadangan tetap lewat penjaga biaya (aturan 1). Hasil melaporkan `modelUsed` dan `fallbackFrom`.
+- **Brand wajib disebut** bila ada lebih dari satu brand (generate, edit, dan semua perubahan Style Guide lewat API/MCP); jika tidak, ditolak sebelum memanggil kenari. Brand atau style yang tidak dikenal juga ditolak tanpa biaya. Style hanya dicari di dalam brand yang disebut.
+- Prompt memakai nama brand: `Style guide <Brand> (dasar): ...` dan `Style guide pilar "<Pillar>" (<Brand>): ...`.
+- Galeri: tiap gambar mencatat `brand` (slug) dan `brandName`; gambar lama tanpa brand dianggap milik brand default. Filter per brand di web, `GET /api/gallery?brand=` dan `list_gallery(brand)`. Nama file tidak berubah (aturan 2).
+- Draf 7 pilar bawaan hanya tersedia untuk brand Teman Seller (tombol "Buat dari 7 Content Pillar"); brand lain membuat pillar sendiri.
+- Claude mengelola semuanya lewat MCP tanpa browser: `list_brands`, `set_brand`, `delete_brand` (butuh `approved=true` setelah Owner setuju), `restore_brand`, `list_style_guides`, `get_style_guide`, `set_style_guide` (termasuk `model` dan `fallback_models`), `style_guide_history`, `restore_style_guide`, `delete_style_guide` (hapus lunak; butuh `approved=true`). Perubahan Claude tercatat sebagai "claude (MCP)".
+- Model gratis (Rp0) tidak terhalang batas budget. Batas biaya tetap global (belum per brand).
 
 ## Di luar cakupan v0.1
 OAuth connector Claude.ai, mask editor, antrean/penjadwalan, upload otomatis ke Drive.
 
 ## Pengujian
-`npm test`: 17 tes dengan server kenari tiruan (auth, harga, penamaan, ambang, budget, error 200, edits multipart, MCP end-to-end, path traversal, tautan bertanda tangan, retensi dan sweep, login/cookie/CSRF/penguncian, batas harian-mingguan-bulanan, ledger). Belum diuji ke API kenari asli karena API key belum tersedia di sesi ini.
+`npm test`: 29 tes dengan server kenari tiruan (auth, harga, penamaan, ambang, budget, error 200, edits multipart, MCP end-to-end, path traversal, tautan bertanda tangan, retensi dan sweep, login/cookie/CSRF/penguncian, batas harian-mingguan-bulanan, ledger, multi-brand, model per pillar, migrasi database lama). Belum diuji ke API kenari asli karena API key belum tersedia di sesi ini.

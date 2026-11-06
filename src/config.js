@@ -18,6 +18,8 @@ export const config = {
   adminUser: process.env.ADMIN_USER || 'admin', // login web dashboard
   adminPassword: process.env.ADMIN_PASSWORD || '',
   sessionHours: num(process.env.SESSION_HOURS, 168),
+  // Brand bawaan (dibuat otomatis saat database baru; style lama dari versi sebelum multi-brand menjadi milik brand ini).
+  defaultBrandName: process.env.DEFAULT_BRAND_NAME || 'Teman Seller',
   defaultModel: process.env.DEFAULT_MODEL || 'gpt-image-2',
   // Model cadangan (urut), dipakai otomatis jika model utama gagal. Daftar dipisah koma. Bisa diubah di Dashboard > Konfigurasi.
   fallbackModels: (process.env.FALLBACK_MODELS || '').split(',').map((x) => x.trim()).filter(Boolean),

@@ -62,7 +62,9 @@ function tile(e) {
   url.type = 'button'; url.className = 'block w-full px-3 pb-2 pt-1 text-left text-xs text-primary hover:underline';
   url.textContent = 'Salin URL'; url.title = fileUrl(e);
   url.onclick = async () => { try { await navigator.clipboard.writeText(fileUrl(e)); url.textContent = 'URL disalin ✓'; } catch { window.prompt('Salin manual:', fileUrl(e)); } setTimeout(() => (url.textContent = 'Salin URL'), 1500); };
-  el.append(btn, name, url);
+  const label = e.brandName || brandName(e.brand);
+  const br = brandList.length > 1 && label ? Object.assign(document.createElement('div'), { className: 'truncate px-3 pt-1 text-[10px] opacity-70', textContent: `${label}${e.style ? ' · ' + e.style : ''}`, title: `${label}${e.style ? ' · ' + e.style : ''}` }) : null;
+  el.append(btn, name, ...(br ? [br] : []), url);
   return el;
 }
 
@@ -72,7 +74,7 @@ function openLightbox(e) {
   $('#lb-url').textContent = fileUrl(e);
   $('#lb-img').src = `/files/${encodeURIComponent(e.file)}${tq()}`;
   const left = e.expiresAt ? Math.max(0, Math.ceil((new Date(e.expiresAt) - Date.now()) / 86400000)) : null;
-  $('#lb-meta').textContent = `${e.model} · ${rp(e.costIdr)}${left !== null ? ` · dihapus permanen ${left} hari lagi` : ''}`;
+  $('#lb-meta').textContent = `${brandList.length > 1 && (e.brandName || e.brand) ? (e.brandName || brandName(e.brand)) + ' · ' : ''}${e.model} · ${rp(e.costIdr)}${left !== null ? ` · dihapus permanen ${left} hari lagi` : ''}`;
   $('#lb-prompt').textContent = e.prompt ? `Prompt: ${e.prompt}` : '';
   $('#lb-dl').href = `/files/${encodeURIComponent(e.file)}${tq()}`; $('#lb-dl').download = e.file;
   $('#lb-msg').textContent = '';
@@ -179,8 +181,9 @@ function renderModels() {
 }
 function fillModelSelects() {
   for (const sel of ['#g-model', '#e-model']) {
-    $(sel).replaceChildren(...models.map((m) => Object.assign(document.createElement('option'), { value: m.id, textContent: `${m.name} (${m.pricePerImageIdr === 0 ? 'gratis' : rp(m.pricePerImageIdr)})` })));
-    $(sel).value = cfg.defaultModel;
+    const cur = $(sel).value;
+    $(sel).replaceChildren(Object.assign(document.createElement('option'), { value: '', textContent: 'Otomatis (ikut model pillar, lalu default)' }), ...models.map((m) => Object.assign(document.createElement('option'), { value: m.id, textContent: `${m.name} (${m.pricePerImageIdr === 0 ? 'gratis' : rp(m.pricePerImageIdr)})` })));
+    $(sel).value = models.some((m) => m.id === cur) ? cur : '';
   }
 }
 async function loadConfig(refresh = false) {
@@ -277,20 +280,75 @@ function initFallback() {
   $('#l-issues').onchange = loadLogs;
 }
 
-/* ---------- style guide jamak ---------- */
-let styleList = [], editingId = null;
-function fillStylePickers() {
-  const others = styleList.filter((x) => !x.base);
-  const opt = (v, t) => Object.assign(document.createElement('option'), { value: v, textContent: t });
-  const base = styleList.find((x) => x.base);
+/* ---------- brand + style guide (gaya dasar + content pillar per brand, model per pillar) ---------- */
+let brandList = [], styleList = [], editingId = null, brandMode = null;
+const pickerStyles = { g: [], e: [] };
+const opt = (v, t) => Object.assign(document.createElement('option'), { value: v, textContent: t });
+const brandName = (slug) => brandList.find((b) => b.slug === slug)?.name || slug || '';
+const modelLabel = (id) => { const m = models.find((x) => x.id === id); return m ? `${m.name} (${m.pricePerImageIdr === 0 ? 'gratis' : rp(m.pricePerImageIdr)})` : id; };
+
+async function loadBrands() {
+  brandList = (await api('/brands')).brands;
+  const saved = store.get('brand'), def = brandList.find((b) => b.default)?.slug;
+  const pref = brandList.some((b) => b.slug === saved) ? saved : def;
+  for (const id of ['#g-brand', '#e-brand', '#br-pick']) {
+    const cur = $(id).value;
+    $(id).replaceChildren(...brandList.map((b) => opt(b.slug, b.name + (b.default ? ' (default)' : ''))));
+    $(id).value = brandList.some((b) => b.slug === cur) ? cur : pref;
+  }
+  const g = $('#gal-brand').value;
+  $('#gal-brand').replaceChildren(opt('', 'Semua brand'), ...brandList.map((b) => opt(b.slug, b.name)));
+  $('#gal-brand').value = brandList.some((b) => b.slug === g) ? g : '';
+  const multi = brandList.length > 1; // satu brand saja: pilihan brand disembunyikan di Generate/Edit/Galeri
+  for (const id of ['#g-brand-wrap', '#e-brand-wrap', '#gal-brand']) $(id).hidden = !multi;
+}
+
+/* Pillar yang menentukan model otomatis: pillar terpilih, kalau tak punya model maka gaya dasar brand. */
+function pillarSource(prefix) {
+  const list = pickerStyles[prefix] || [];
+  const sel = $(`#${prefix}-style-pick`).value;
+  const useStyle = prefix === 'g' ? $('#g-style').checked : sel !== '__none';
+  if (!useStyle) return null;
+  const pick = sel && sel !== '__none' ? list.find((x) => x.name === sel) : null;
+  return [pick, list.find((x) => x.base)].find((x) => x?.model) || null;
+}
+const effectiveModel = (prefix) => $(`#${prefix}-model`).value || pillarSource(prefix)?.model || cfg?.defaultModel;
+function showPillarModel(prefix) {
+  const src = pillarSource(prefix), explicit = $(`#${prefix}-model`).value;
+  $(`#${prefix}-pillar-model`).textContent = explicit
+    ? `Model dipilih manual: ${modelLabel(explicit)}.`
+    : src ? `Model otomatis dari "${src.name}": ${modelLabel(src.model)}${src.fallbackModels.length ? `. Cadangan: ${src.fallbackModels.join(', ')}` : ''}.`
+      : `Model otomatis: default (${cfg ? modelLabel(cfg.defaultModel) : '-'}).`;
+  estimate(prefix);
+}
+async function refreshPickers(prefix) {
+  const r = await api(`/styles?brand=${encodeURIComponent($(`#${prefix}-brand`).value)}`);
+  pickerStyles[prefix] = r.styles;
+  const others = r.styles.filter((x) => !x.base), base = r.styles.find((x) => x.base);
   const first = base ? `Hanya gaya dasar (${base.name})` : 'Tanpa style tambahan';
-  $('#g-style-pick').replaceChildren(opt('', first), ...others.map((x) => opt(x.name, x.pillar && x.pillar !== x.name ? `${x.name} (${x.pillar})` : x.name)));
-  $('#e-style-pick').replaceChildren(opt('__none', 'Tanpa Style Guide'), opt('', first), ...others.map((x) => opt(x.name, x.name)));
+  const label = (x) => (x.model ? `${x.name} · ${x.model}` : x.name);
+  if (prefix === 'g') {
+    $('#g-style-pick').replaceChildren(opt('', first), ...others.map((x) => opt(x.name, label(x))));
+    $('#g-style-label').textContent = `Pakai Style Guide ${r.brand.name}`;
+  } else $('#e-style-pick').replaceChildren(opt('__none', 'Tanpa Style Guide'), opt('', first), ...others.map((x) => opt(x.name, label(x))));
+  showPillarModel(prefix);
+}
+
+function fillStyleModelSelect() {
+  const cur = $('#st-model').value;
+  $('#st-model').replaceChildren(opt('', 'Ikut default (Konfigurasi)'), ...models.map((m) => opt(m.id, `${m.name} (${m.pricePerImageIdr === 0 ? 'gratis' : rp(m.pricePerImageIdr)})`)));
+  $('#st-models').replaceChildren(...models.map((m) => opt(m.id, m.name)));
+  setStyleModel(cur);
+}
+function setStyleModel(v) {
+  if (v && ![...$('#st-model').options].some((o) => o.value === v)) $('#st-model').append(opt(v, `${v} (tidak ada di daftar)`));
+  $('#st-model').value = v || '';
 }
 function editStyle(st) {
   editingId = st?.id || null;
   $('#st-title').textContent = st ? `Ubah: ${st.name}` : 'Style baru';
   $('#st-name').value = st?.name || ''; $('#st-pillar').value = st?.pillar || ''; $('#st-text').value = st?.text || ''; $('#st-base').checked = Boolean(st?.base);
+  setStyleModel(st?.model || ''); $('#st-fallbacks').value = (st?.fallbackModels || []).join(', ');
   $('#st-del').classList.toggle('hidden', !st); $('#st-msg').textContent = '';
   renderStyleList();
 }
@@ -303,45 +361,92 @@ function renderStyleList() {
     const n = document.createElement('span'); n.className = 'min-w-0 flex-1 truncate font-medium text-bodydark dark:text-white'; n.textContent = st.name; top.append(n);
     if (st.base) top.append(Object.assign(document.createElement('span'), { className: 'rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-white', textContent: 'Dasar' }));
     const sub = document.createElement('div'); sub.className = 'mt-1 line-clamp-2 text-xs'; sub.textContent = st.text || '(belum ada teks)';
+    const mdl = document.createElement('div'); mdl.className = 'mt-1 text-[11px] font-medium text-primary'; mdl.textContent = st.model ? `Model: ${st.model}${st.fallbackModels.length ? ` (+${st.fallbackModels.length} cadangan)` : ''}` : 'Model: ikut default';
     const by = document.createElement('div'); by.className = 'mt-1 text-[10px] opacity-70'; by.textContent = `Diubah ${new Date(st.updatedAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} oleh ${st.updatedBy === 'web' ? 'Anda (web)' : st.updatedBy}`;
-    b.append(top, sub, by); b.onclick = () => editStyle(st);
+    b.append(top, sub, mdl, by); b.onclick = () => editStyle(st);
     return b;
   });
   $('#st-list').replaceChildren(...rows);
-  if (!rows.length) $('#st-list').textContent = 'Belum ada style. Klik "+ Style baru" atau "Buat dari 7 Content Pillar".';
+  if (!rows.length) $('#st-list').textContent = 'Belum ada style di brand ini. Klik "+ Style baru" (mulai dari gaya dasar brand) atau buat draf pillar bila tersedia.';
 }
 async function loadStyles(keepEditing = true) {
-  const r = await api('/styles');
+  const slug = $('#br-pick').value;
+  const r = await api(`/styles?brand=${encodeURIComponent(slug)}`);
   styleList = r.styles;
   $('#st-pillars').replaceChildren(...r.pillars.map((p) => Object.assign(document.createElement('option'), { value: p })));
-  fillStylePickers();
+  $('#st-seed').classList.toggle('hidden', !r.pillars.length); $('#st-seed').textContent = `Buat dari ${r.pillars.length} Content Pillar`;
+  fillStyleModelSelect();
   const cur = keepEditing ? styleList.find((x) => x.id === editingId) : null;
   editStyle(cur || null);
+  await Promise.all(['g', 'e'].filter((p) => $(`#${p}-brand`).value === slug).map(refreshPickers)); // dropdown Generate/Edit ikut segar
+}
+
+function showBrandForm(mode) {
+  brandMode = mode;
+  const b = brandList.find((x) => x.slug === $('#br-pick').value);
+  $('#br-form').hidden = !mode;
+  if (!mode) return;
+  const edit = mode === 'edit';
+  $('#br-title').textContent = edit ? `Ubah brand: ${b.name}` : 'Brand baru';
+  $('#br-name').value = edit ? b.name : ''; $('#br-note').value = edit ? b.note : '';
+  $('#br-default').checked = edit && b.default; $('#br-default').disabled = edit && b.default;
+  $('#br-del').classList.toggle('hidden', !edit || b.default); $('#br-msg').textContent = '';
+}
+function initBrands() {
+  $('#br-pick').onchange = async () => { store.set('brand', $('#br-pick').value); showBrandForm(null); editingId = null; await loadStyles(false); };
+  $('#br-new').onclick = () => showBrandForm('new');
+  $('#br-edit').onclick = () => showBrandForm('edit');
+  $('#br-cancel').onclick = () => showBrandForm(null);
+  $('#br-save').onclick = async () => {
+    const msg = $('#br-msg');
+    const body = { name: $('#br-name').value, note: $('#br-note').value, default: $('#br-default').checked || undefined };
+    try {
+      const b = brandList.find((x) => x.slug === $('#br-pick').value);
+      const saved = brandMode === 'edit' ? await api(`/brands/${b.id}`, { method: 'PUT', body: JSON.stringify(body) }) : await api('/brands', { method: 'POST', body: JSON.stringify(body) });
+      await loadBrands(); $('#br-pick').value = saved.slug; store.set('brand', saved.slug);
+      showBrandForm(null); editingId = null; await loadStyles(false);
+      $('#st-seed-msg').textContent = `Brand "${saved.name}" tersimpan.`;
+    } catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
+  $('#br-del').onclick = async () => {
+    const b = brandList.find((x) => x.slug === $('#br-pick').value);
+    if (!b || !confirm(`Hapus brand "${b.name}" beserta ${b.styleCount} style-nya? Gambar di galeri tidak ikut terhapus. Bisa dipulihkan lewat Claude (restore_brand).`)) return;
+    try {
+      await api(`/brands/${b.id}`, { method: 'DELETE' });
+      await loadBrands(); store.set('brand', ''); showBrandForm(null); editingId = null; await loadStyles(false);
+      $('#st-seed-msg').textContent = `Brand "${b.name}" dihapus.`;
+    } catch (e) { $('#br-msg').className = ERR; $('#br-msg').textContent = e.message; }
+  };
 }
 function initStyles() {
   $('#st-new').onclick = () => editStyle(null);
   $('#st-seed').onclick = async () => {
-    const r = await api('/styles/seed-pillars', { method: 'POST', body: '{}' });
-    $('#st-seed-msg').textContent = r.added.length ? `Ditambahkan ${r.added.length} draf pilar. Periksa dan ubah sesuai selera, lalu setujui sebagai Owner.` : 'Semua pilar sudah ada.';
-    await loadStyles();
+    try {
+      const r = await api('/styles/seed-pillars', { method: 'POST', body: JSON.stringify({ brand: $('#br-pick').value }) });
+      $('#st-seed-msg').textContent = r.added.length ? `Ditambahkan ${r.added.length} draf pilar. Periksa dan ubah sesuai selera, lalu setujui sebagai Owner.` : 'Semua pilar sudah ada.';
+      await loadBrands(); await loadStyles();
+    } catch (e) { $('#st-seed-msg').textContent = e.message; }
   };
   $('#st-save').onclick = async () => {
     const msg = $('#st-msg');
-    const body = { name: $('#st-name').value, pillar: $('#st-pillar').value, text: $('#st-text').value, base: $('#st-base').checked };
+    const body = {
+      brand: $('#br-pick').value, name: $('#st-name').value, pillar: $('#st-pillar').value, text: $('#st-text').value, base: $('#st-base').checked,
+      model: $('#st-model').value, fallbackModels: $('#st-fallbacks').value.split(',').map((x) => x.trim()).filter(Boolean),
+    };
     try {
       const saved = editingId ? await api(`/styles/${editingId}`, { method: 'PUT', body: JSON.stringify(body) }) : await api('/styles', { method: 'POST', body: JSON.stringify(body) });
-      editingId = saved.id; await loadStyles(); msg.className = OK; msg.textContent = 'Tersimpan.';
+      editingId = saved.id; await loadBrands(); await loadStyles(); msg.className = OK; msg.textContent = 'Tersimpan.';
     } catch (e) { msg.className = ERR; msg.textContent = e.message; }
   };
   $('#st-del').onclick = async () => {
-    if (!editingId || !confirm('Hapus style ini? Tidak bisa dikembalikan.')) return;
-    try { await api(`/styles/${editingId}`, { method: 'DELETE' }); editingId = null; await loadStyles(false); $('#st-msg').className = OK; $('#st-msg').textContent = 'Style dihapus.'; }
+    if (!editingId || !confirm('Hapus style ini? Bisa dipulihkan lewat Claude (restore_style_guide).')) return;
+    try { await api(`/styles/${editingId}`, { method: 'DELETE' }); editingId = null; await loadBrands(); await loadStyles(false); $('#st-msg').className = OK; $('#st-msg').textContent = 'Style dihapus.'; }
     catch (e) { $('#st-msg').className = ERR; $('#st-msg').textContent = e.message; }
   };
 }
 
 async function estimate(prefix) {
-  const model = $(`#${prefix}-model`).value, n = $(`#${prefix}-n`).value || 1;
+  const model = effectiveModel(prefix), n = $(`#${prefix}-n`).value || 1;
   if (!model) return;
   try {
     const e = await api(`/estimate?model=${encodeURIComponent(model)}&n=${n}`);
@@ -364,7 +469,7 @@ async function run(prefix, path, payload, outId) {
 }
 
 async function loadGallery() {
-  const items = await api(`/gallery?q=${encodeURIComponent($('#q').value)}`);
+  const items = await api(`/gallery?q=${encodeURIComponent($('#q').value)}&brand=${encodeURIComponent($('#gal-brand').value)}`);
   $('#gal-grid').replaceChildren(...items.map(tile));
   if (!items.length) $('#gal-grid').textContent = 'Belum ada gambar.';
 }
@@ -402,9 +507,14 @@ async function init() {
     type: 'button', className: 'rounded-full border border-stroke px-3 py-1 text-xs text-bodydark hover:border-primary hover:text-primary dark:border-strokedark dark:text-white',
     textContent: `${l} ${v}`, onclick: () => ($('#g-size').value = v),
   })));
-  for (const p of ['g', 'e']) { $(`#${p}-model`).onchange = () => estimate(p); $(`#${p}-n`).oninput = () => estimate(p); estimate(p); }
+  for (const p of ['g', 'e']) {
+    $(`#${p}-model`).onchange = () => showPillarModel(p); $(`#${p}-n`).oninput = () => estimate(p);
+    $(`#${p}-style-pick`).onchange = () => showPillarModel(p);
+    $(`#${p}-brand`).onchange = async () => { store.set('brand', $(`#${p}-brand`).value); await refreshPickers(p); };
+  }
+  $('#g-style').onchange = () => showPillarModel('g');
   $('#g-go').onclick = () => run('g', '/generate', {
-    prompt: $('#g-prompt').value, model: $('#g-model').value, n: Number($('#g-n').value) || 1, size: $('#g-size').value || undefined,
+    prompt: $('#g-prompt').value, brand: $('#g-brand').value || undefined, model: $('#g-model').value || undefined, n: Number($('#g-n').value) || 1, size: $('#g-size').value || undefined,
     title: $('#g-title').value || undefined, background: $('#g-opaque').checked ? 'transparent' : undefined, useStyle: $('#g-style').checked, style: $('#g-style-pick').value || undefined, approved: $('#g-appr').checked,
   }, '#g-out');
   $('#g-five').onclick = () => { $('#g-n').value = Math.min(5, cfg.maxN); estimate('g'); };
@@ -415,12 +525,14 @@ async function init() {
   };
   $('#e-go').onclick = () => {
     if (!editSource) { $('#e-msg').className = ERR; $('#e-msg').textContent = 'Pilih gambar sumber dulu.'; return; }
-    run('e', '/edit', { prompt: $('#e-prompt').value, model: $('#e-model').value, n: Number($('#e-n').value) || 1, title: $('#e-title').value || undefined,
+    run('e', '/edit', { prompt: $('#e-prompt').value, brand: $('#e-brand').value || undefined, model: $('#e-model').value || undefined, n: Number($('#e-n').value) || 1, title: $('#e-title').value || undefined,
       sourceId: editSource.sourceId, imageBase64: editSource.imageBase64, approved: $('#e-appr').checked, useStyle: $('#e-style-pick').value !== '__none', style: ['', '__none'].includes($('#e-style-pick').value) ? undefined : $('#e-style-pick').value }, '#e-out');
   };
   $('#q').oninput = () => loadGallery();
-  initStyles();
-  styleList = (await api('/styles')).styles; fillStylePickers();
+  $('#gal-brand').onchange = () => loadGallery();
+  initStyles(); initBrands();
+  await loadBrands();
+  await Promise.all([refreshPickers('g'), refreshPickers('e')]);
 
   $('#budget-form').onsubmit = async (ev) => {
     ev.preventDefault();

@@ -147,7 +147,7 @@ test('MCP: URL publik bertanda tangan bisa diambil, dirusak/kedaluwarsa ditolak'
   const ok = await fetch(local); // tanpa token: cukup tanda tangan
   assert.equal(ok.status, 200);
   assert.match(ok.headers.get('content-type'), /image\//);
-  assert.equal((await fetch(local.replace(/sig=./, 'sig=0'))).status, 403);
+  assert.equal((await fetch(local.replace(/sig=(.)/, (_m, c) => `sig=${c === '0' ? '1' : '0'}`))).status, 403);
   assert.equal((await fetch(local.replace(/exp=\d+/, 'exp=1'))).status, 403);
   await client.close();
 });
@@ -522,4 +522,240 @@ test('Style Guide: data lama (styles.json dan style.txt) dimigrasi ke database s
   const out = JSON.parse(run(d2).stdout);
   assert.deepEqual(out, [['Dasar', 'T2', true], ['Ngopi Dulu', 'T1', false]]);
   assert.ok(existsSync(join(d2, 'styles.json.migrated')));
+});
+
+// ---------------- multi-brand + model per pillar ----------------
+const freeModels = () => models.data.filter((m) => m.id.endsWith(':free') && m.endpoints.includes('images')).map((m) => m.id);
+const call2 = (m, p, b) => fetch(appBase + p, { method: m, headers: H, body: b ? JSON.stringify(b) : undefined });
+
+test('multi-brand: tiap brand punya gaya dasar + pillar sendiri, nama pillar boleh sama, brand wajib disebut bila lebih dari satu', async () => {
+  const free = freeModels();
+  const ts = (await (await call2('GET', '/api/brands')).json()).brands;
+  assert.equal(ts.length, 1);
+  assert.equal(ts[0].slug, 'teman-seller');
+  assert.equal(ts[0].default, true);
+
+  assert.equal((await call2('POST', '/api/brands', { name: ' ' })).status, 400);
+  const kids = await (await call2('POST', '/api/brands', { name: 'Delova Kids', note: 'baju anak' })).json();
+  assert.equal(kids.slug, 'delova-kids');
+  assert.equal((await call2('POST', '/api/brands', { name: 'delova kids' })).status, 400, 'nama brand kembar (tak peka huruf besar)');
+  const wardrobe = await (await call2('POST', '/api/brands', { name: 'Delova Wardrobe' })).json();
+
+  // style di tiap brand: nama pillar sama boleh di brand berbeda
+  const k = (b) => call2('POST', '/api/styles', b);
+  assert.equal((await k({ name: 'Gaya dasar', text: 'x' })).status, 400, 'ada banyak brand: brand wajib disebut');
+  await k({ brand: 'delova-kids', name: 'Gaya dasar', text: 'DASAR-KIDS', base: true });
+  await k({ brand: 'delova-kids', name: 'Hari Raya', pillar: 'Musiman', text: 'PILAR-KIDS-RAYA' });
+  await k({ brand: 'delova-wardrobe', name: 'Gaya dasar', text: 'DASAR-WARDROBE', base: true });
+  assert.equal((await k({ brand: 'delova-wardrobe', name: 'Hari Raya', text: 'PILAR-WARDROBE-RAYA' })).status, 201, 'nama sama di brand lain');
+  assert.equal((await k({ brand: 'delova-wardrobe', name: 'hari raya', text: 'x' })).status, 400, 'tapi kembar di brand sama ditolak');
+
+  // hanya satu gaya dasar PER BRAND
+  const kidsStyles = (await (await call2('GET', '/api/styles?brand=delova-kids')).json()).styles;
+  assert.deepEqual(kidsStyles.map((x) => x.name), ['Gaya dasar', 'Hari Raya']);
+  assert.equal((await (await call2('GET', '/api/styles?brand=delova-wardrobe')).json()).styles.filter((x) => x.base).length, 1);
+  assert.equal((await call2('GET', '/api/styles?brand=tidak-ada')).status, 400);
+
+  // generate: brand wajib, style dicari di dalam brand-nya, prompt memakai gaya brand yang benar
+  const gen = (b) => post('/api/generate', { prompt: 'uji brand', model: free[0], ...b });
+  let r = await gen({});
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /Sebutkan brand/);
+  r = await gen({ brand: 'delova-kids', style: 'Hari Raya' });
+  assert.equal(r.status, 200);
+  assert.match(calls.at(-1).body, /DASAR-KIDS/);
+  assert.match(calls.at(-1).body, /PILAR-KIDS-RAYA/);
+  assert.doesNotMatch(calls.at(-1).body, /WARDROBE/);
+  assert.match(calls.at(-1).body, /Style guide Delova Kids \(dasar\)/);
+  const img = (await r.json()).images[0];
+  assert.equal(img.brand, 'delova-kids');
+  assert.equal(img.brandName, 'Delova Kids');
+  await gen({ brand: 'Delova Wardrobe', style: 'Hari Raya' });
+  assert.match(calls.at(-1).body, /PILAR-WARDROBE-RAYA/);
+  assert.doesNotMatch(calls.at(-1).body, /KIDS/);
+  const before = calls.length;
+  r = await gen({ brand: 'delova-kids', style: 'Cerita Juragan' });
+  assert.equal(r.status, 400, 'pillar milik brand lain tidak dikenali');
+  assert.equal((await post('/api/generate', { prompt: 'x', model: free[0], brand: 'ngawur' })).status, 400);
+  assert.equal(calls.length, before, 'brand/style salah tidak memanggil kenari');
+
+  // galeri disaring per brand; gambar lama (tanpa brand) masuk brand default
+  const kg = await (await call2('GET', '/api/gallery?brand=delova-kids')).json();
+  assert.ok(kg.length >= 1 && kg.every((e) => e.brand === 'delova-kids'));
+  const tg = await (await call2('GET', '/api/gallery?brand=teman-seller')).json();
+  assert.ok(tg.length >= 1 && tg.every((e) => e.brand === 'teman-seller'));
+  assert.ok((await (await call2('GET', '/api/gallery')).json()).length >= kg.length + tg.length);
+
+  // brand default tidak bisa dihapus/dimatikan; brand lain bisa dihapus lalu dipulihkan (lewat MCP)
+  assert.equal((await call2('DELETE', `/api/brands/${ts[0].id}`)).status, 400);
+  assert.equal((await call2('PUT', `/api/brands/${ts[0].id}`, { default: false })).status, 400);
+  assert.equal((await call2('PUT', `/api/brands/${wardrobe.id}`, { name: 'Delova Wardrobe Utama', note: 'baju dewasa' })).status, 200);
+  assert.equal((await call2('DELETE', `/api/brands/${wardrobe.id}`)).status, 200);
+  assert.equal((await call2('GET', '/api/styles?brand=delova-wardrobe')).status, 400, 'brand terhapus tak bisa dipakai');
+  assert.equal((await gen({ brand: 'delova-wardrobe' })).status, 400);
+});
+
+test('model per pillar: pillar punya model + cadangan sendiri; model manual menang; cadangan pillar menimpa cadangan global', async () => {
+  const free = freeModels();
+  assert.ok(free.length >= 3);
+  const [mA, mB, mC] = free;
+  const post2 = (b) => post('/api/generate', { prompt: 'uji model pillar', brand: 'delova-kids', ...b });
+  const usedModel = () => JSON.parse(calls.at(-1).body).model;
+  assert.equal((await call2('PUT', '/api/settings', { defaultModel: mC, fallbackModels: [] })).status, 200); // default global = mC
+
+  const bad = await call2('POST', '/api/styles', { brand: 'delova-kids', name: 'Model Ngawur', text: 'x', model: 'model-tidak-ada' });
+  assert.equal(bad.status, 400);
+  assert.match((await bad.json()).error, /tidak ada di daftar model/);
+  assert.equal((await call2('POST', '/api/styles', { brand: 'delova-kids', name: 'Kebanyakan', text: 'x', fallbackModels: [mA, mB, mC, 'a', 'b', 'c'] })).status, 400);
+
+  const pil = await (await call2('POST', '/api/styles', { brand: 'delova-kids', name: 'Studio Foto', text: 'PILAR-FOTO', model: mB, fallbackModels: [mC] })).json();
+  assert.equal(pil.model, mB);
+  assert.deepEqual(pil.fallbackModels, [mC]);
+
+  // tanpa model eksplisit: pakai model pillar (bukan default global)
+  let r = await post2({ style: 'Studio Foto' });
+  assert.equal(r.status, 200);
+  assert.equal(usedModel(), mB);
+  assert.equal((await r.json()).modelUsed, mB);
+  // pillar lain tanpa model: gaya dasar brand tidak punya model -> default global
+  r = await post2({ style: 'Hari Raya', model: undefined });
+  assert.equal(usedModel(), mC, 'tanpa model pillar: default global');
+  // model eksplisit menang atas model pillar
+  await post2({ style: 'Studio Foto', model: mA });
+  assert.equal(usedModel(), mA);
+  // useStyle=false mematikan model pillar juga
+  await post2({ style: 'Studio Foto', useStyle: false });
+  assert.equal(usedModel(), mC, 'useStyle=false: default global');
+
+  // gaya dasar brand membawa model untuk semua pillar yang tak punya model sendiri
+  const kidsBase = (await (await call2('GET', '/api/styles?brand=delova-kids')).json()).styles.find((x) => x.base);
+  await call2('PUT', `/api/styles/${kidsBase.id}`, { model: mA });
+  await post2({ style: 'Hari Raya' });
+  assert.equal(usedModel(), mA, 'pillar tanpa model mewarisi model gaya dasar brand');
+  await post2({ style: 'Studio Foto' });
+  assert.equal(usedModel(), mB, 'model pillar lebih diutamakan daripada gaya dasar');
+
+  // cadangan pillar: mB mati -> pindah ke mC (cadangan pillar), bukan cadangan global
+  const put = (b) => call2('PUT', '/api/settings', b);
+  await put({ fallbackModels: [mA] });
+  failModels = new Set([mB]);
+  r = await post2({ style: 'Studio Foto' });
+  assert.equal(r.status, 200);
+  const out = await r.json();
+  assert.equal(out.modelUsed, mC);
+  assert.equal(out.fallbackFrom, mB);
+  // pillar tanpa cadangan sendiri memakai cadangan global
+  await call2('PUT', `/api/styles/${pil.id}`, { fallbackModels: [] });
+  r = await post2({ style: 'Studio Foto' });
+  assert.equal((await r.json()).modelUsed, mA, 'cadangan global dipakai bila pillar tak punya');
+  failModels = new Set();
+  await put({ fallbackModels: [] });
+
+  // mengosongkan model pillar = kembali ke default
+  await call2('PUT', `/api/styles/${pil.id}`, { model: '' });
+  await post2({ style: 'Studio Foto' });
+  assert.equal(usedModel(), mA, 'model pillar kosong: mewarisi gaya dasar brand (mA)');
+
+  // riwayat menyimpan model; restore revisi mengembalikannya
+  await call2('PUT', `/api/styles/${pil.id}`, { model: mB });
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 't', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(appBase + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer rahasia' } } }));
+  const mcp = async (name, args) => { const x = await client.callTool({ name, arguments: args }); return { err: x.isError, text: x.content[0].text }; };
+  const hist = (await mcp('style_guide_history', { name: 'Studio Foto', brand: 'delova-kids' })).text;
+  assert.match(hist, new RegExp(`model: ${mB.replace(/[.:]/g, '\\$&')}`));
+  await client.close();
+  await call2('PUT', '/api/settings', { defaultModel: 'gpt-image-2', fallbackModels: [] }); // pulihkan
+});
+
+test('multi-brand lewat MCP: list/set/delete/restore brand, brand wajib, model per pillar diatur Claude', async () => {
+  const free = freeModels();
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 't', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(appBase + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer rahasia' } } }));
+  const mcp = async (name, args) => { const x = await client.callTool({ name, arguments: args }); return { err: x.isError, text: x.content[0].text }; };
+
+  const made = await mcp('set_brand', { name: 'Delova Scarf', note: 'hijab dan scarf' });
+  assert.ok(!made.err, made.text);
+  assert.match(made.text, /slug: delova-scarf/);
+  assert.match((await mcp('list_brands', {})).text, /\[DEFAULT\] Teman Seller[\s\S]*Delova Kids[\s\S]*Delova Scarf/);
+  assert.ok(!(await mcp('set_brand', { name: 'delova scarf', note: 'catatan baru' })).err, 'upsert berdasarkan nama');
+
+  // brand wajib untuk operasi tulis/generate bila ada banyak brand
+  const noBrand = await mcp('set_style_guide', { name: 'Reels', text: 'x' });
+  assert.equal(noBrand.err, true);
+  assert.match(noBrand.text, /Sebutkan brand/);
+  assert.equal((await mcp('generate_image', { prompt: 'tanpa brand', model: free[0] })).err, true);
+
+  // Claude mengatur pillar + modelnya
+  const set = await mcp('set_style_guide', { brand: 'Delova Scarf', name: 'Flatlay', pillar: 'Produk', text: 'PILAR-SCARF-FLATLAY', model: free[1], fallback_models: [free[2]] });
+  assert.ok(!set.err, set.text);
+  assert.match(set.text, new RegExp(`model: ${free[1].replace(/[.:]/g, '\\$&')}`));
+  assert.equal((await mcp('set_style_guide', { brand: 'Delova Scarf', name: 'Flatlay', model: 'model-ngawur' })).err, true);
+  const got = await mcp('get_style_guide', { name: 'flatlay', brand: 'delova-scarf' });
+  assert.match(got.text, /PILAR-SCARF-FLATLAY/);
+  assert.equal((await mcp('get_style_guide', { name: 'Flatlay' })).err, true, 'get tanpa brand ditolak saat banyak brand');
+  const all = (await mcp('list_style_guides', {})).text;
+  assert.match(all, /== Brand: Teman Seller/);
+  assert.match(all, /== Brand: Delova Scarf/);
+  assert.match(all, /Flatlay/);
+  assert.doesNotMatch((await mcp('list_style_guides', { brand: 'delova-kids' })).text, /Flatlay/);
+
+  const g = await client.callTool({ name: 'generate_image', arguments: { prompt: 'scarf flatlay', brand: 'Delova Scarf', style: 'Flatlay' } });
+  assert.ok(!g.isError, JSON.stringify(g));
+  assert.equal(JSON.parse(calls.at(-1).body).model, free[1], 'pillar menentukan model saat Claude tak menyebut model');
+  assert.match(calls.at(-1).body, /PILAR-SCARF-FLATLAY/);
+  assert.match(g.content[0].text, /untuk brand Delova Scarf \(Flatlay\)/);
+  const gal = (await mcp('list_gallery', { brand: 'delova-scarf' })).text;
+  assert.match(gal, /Delova Scarf/);
+  assert.doesNotMatch((await mcp('list_gallery', { brand: 'delova-kids' })).text, /scarf flatlay/);
+
+  // hapus butuh persetujuan Owner; brand default tak bisa dihapus; bisa dipulihkan
+  const no = await mcp('delete_brand', { name: 'Delova Scarf' });
+  assert.equal(no.err, true);
+  assert.match(no.text, /persetujuan Owner/);
+  assert.equal((await mcp('delete_brand', { name: 'Teman Seller', approved: true })).err, true, 'brand default');
+  assert.ok(!(await mcp('delete_brand', { name: 'Delova Scarf', approved: true })).err);
+  assert.equal((await mcp('get_style_guide', { name: 'Flatlay', brand: 'delova-scarf' })).err, true);
+  assert.match((await mcp('list_brands', {})).text, /Dihapus .*Delova Scarf/);
+  assert.ok(!(await mcp('restore_brand', { name: 'Delova Scarf' })).err);
+  assert.match((await mcp('get_style_guide', { name: 'Flatlay', brand: 'delova-scarf' })).text, /PILAR-SCARF-FLATLAY/, 'style ikut kembali');
+  assert.ok(!(await mcp('set_brand', { name: 'Delova Scarf', make_default: true })).err);
+  assert.match((await mcp('list_brands', {})).text, /\[DEFAULT\] Delova Scarf/);
+  await mcp('set_brand', { name: 'Teman Seller', make_default: true }); // kembalikan
+  await client.close();
+});
+
+test('migrasi: database sebelum multi-brand (tanpa brand_id/model) dinaikkan, style lama jadi milik brand default', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'mig3-'));
+  const make = spawnSync(process.execPath, ['--no-warnings', '--input-type=module', '-e', `
+    import { DatabaseSync } from 'node:sqlite';
+    const d = new DatabaseSync(${JSON.stringify(join(dir, 'studio.db'))});
+    d.exec(\`
+      CREATE TABLE styles (id TEXT PRIMARY KEY, name TEXT NOT NULL, pillar TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '', base INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, updated_by TEXT NOT NULL DEFAULT 'web', deleted_at TEXT);
+      CREATE UNIQUE INDEX styles_name_live ON styles (lower(name)) WHERE deleted_at IS NULL;
+      CREATE TABLE style_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, style_id TEXT NOT NULL, name TEXT NOT NULL, pillar TEXT NOT NULL, text TEXT NOT NULL, base INTEGER NOT NULL, action TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL);
+      INSERT INTO styles (id, name, pillar, text, base, updated_at) VALUES ('s1', 'Gaya dasar', '', 'DASAR-LAMA', 1, '2026-11-01T00:00:00Z'), ('s2', 'Ngopi Dulu', 'Ngopi Dulu', 'PILAR-LAMA', 0, '2026-11-01T00:00:00Z');
+      INSERT INTO style_revisions (style_id, name, pillar, text, base, action, actor, at) VALUES ('s2', 'Ngopi Dulu', 'Ngopi Dulu', 'PILAR-LAMA', 0, 'create', 'web', '2026-11-01T00:00:00Z');
+    \`);
+  `], { encoding: 'utf8' });
+  assert.equal(make.status, 0, make.stderr);
+  const run = () => spawnSync(process.execPath, ['--no-warnings', '--input-type=module', '-e', `
+    const s = await import(${JSON.stringify(new URL('../src/styles.js', import.meta.url).href)});
+    const b = s.listBrands();
+    const c = s.compose(undefined, 'Ngopi Dulu');
+    const before = s.list().map((x) => [x.name, x.text, x.base, x.model]);
+    s.update('s2', { model: 'm-x', fallbackModels: ['m-y'] });
+    console.log(JSON.stringify({ brands: b.map((x) => [x.name, x.slug, x.default, x.styleCount]), list: before, used: c.used, hist: s.history('Ngopi Dulu').length }));
+  `], { env: { ...process.env, DATA_DIR: dir, DEFAULT_BRAND_NAME: 'Teman Seller' }, encoding: 'utf8' });
+  const out = JSON.parse(run().stdout);
+  assert.deepEqual(out.brands, [['Teman Seller', 'teman-seller', true, 2]]);
+  assert.deepEqual(out.list, [['Gaya dasar', 'DASAR-LAMA', true, ''], ['Ngopi Dulu', 'PILAR-LAMA', false, '']]);
+  assert.deepEqual(out.used, ['Gaya dasar', 'Ngopi Dulu']);
+  const again = JSON.parse(run().stdout);
+  assert.deepEqual(again.brands, [['Teman Seller', 'teman-seller', true, 2]], 'jalan kedua tidak menggandakan brand');
+  assert.deepEqual(again.list.find((x) => x[0] === 'Ngopi Dulu'), ['Ngopi Dulu', 'PILAR-LAMA', false, 'm-x'], 'kolom model tersimpan');
 });

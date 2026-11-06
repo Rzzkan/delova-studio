@@ -16,7 +16,7 @@ const fail = (t) => ({ isError: true, content: [text(t)] });
 async function result(res, returnImages) {
   const lines = res.images.map((e) => `- ${e.id} | ${e.file} | ${baseUrl()}/files/${encodeURIComponent(e.file)}`);
   const fb = res.fallbackFrom ? `PERHATIAN: model utama ${res.fallbackFrom} gagal, hasil dibuat dengan model cadangan ${res.modelUsed}. Alasan: ${res.failures.join(' | ')}\n` : '';
-  const content = [text(`${fb}Selesai: ${res.images.length} gambar dengan ${res.modelUsed}, biaya Rp${res.costIdr}.\n${lines.join('\n')}\nSemua gambar tersimpan di galeri: ${baseUrl()}`)];
+  const content = [text(`${fb}Selesai: ${res.images.length} gambar${res.images[0]?.brandName ? ` untuk brand ${res.images[0].brandName}${res.images[0].style ? ` (${res.images[0].style})` : ''}` : ''} dengan ${res.modelUsed}, biaya Rp${res.costIdr}.\n${lines.join('\n')}\nSemua gambar tersimpan di galeri: ${baseUrl()}`)];
   if (returnImages) {
     for (const e of res.images) {
       const buf = await store.readImageFile(e.file);
@@ -38,13 +38,14 @@ function wrap(fn) {
 }
 
 const common = {
-  model: z.string().optional().describe(`ID model gambar. Default ${settings.getSync().defaultModel} (diatur Owner di Dashboard > Konfigurasi). Lihat list_image_models.`),
+  model: z.string().optional().describe(`ID model gambar. Kosong = model milik pillar (atau gaya dasar brand) bila diatur, kalau tidak default ${settings.getSync().defaultModel} (Dashboard > Konfigurasi). Lihat list_image_models.`),
   n: z.number().int().min(1).max(10).optional().describe('Jumlah gambar. Dibatasi pengaturan Dashboard (default 5). Aturan kantor: minta 5 untuk opsi konsep.'),
   size: z.string().optional().describe('Petunjuk ukuran, mis. 1024x1024, 1024x1280 (feed 4:5), 1024x1792 (story). Bukan jaminan.'),
   title: z.string().optional().describe('Judul singkat untuk nama file (YYYY-MM-DD_Role_Judul-Singkat_v1).'),
   role: z.string().optional().describe('Nama peran pembuat untuk nama file, default Kenzo.'),
   approved: z.boolean().optional().describe('Isi true HANYA setelah Owner (Aditya) menyetujui biaya yang melewati ambang.'),
-  style: z.string().optional().describe('Nama Style Guide per content pillar (lihat list_style_guides), ditambahkan di atas gaya dasar. Kosong = hanya gaya dasar.'),
+  brand: z.string().optional().describe('Nama atau slug brand (lihat list_brands). WAJIB bila ada lebih dari satu brand. Menentukan Style Guide yang dipakai dan label di galeri.'),
+  style: z.string().optional().describe('Nama Style Guide content pillar DALAM brand tsb (lihat list_style_guides), ditambahkan di atas gaya dasar brand. Pillar juga membawa model generate + cadangannya sendiri. Kosong = hanya gaya dasar.'),
   return_images: z.boolean().optional().describe('Kirim gambar langsung di respons (default true).'),
 };
 
@@ -115,12 +116,12 @@ export function buildMcpServer() {
   server.registerTool(
     'list_gallery',
     {
-      description: 'Lihat gambar yang sudah dibuat (terbaru dulu). Bisa dicari lewat kata kunci.',
-      inputSchema: { query: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
+      description: 'Lihat gambar yang sudah dibuat (terbaru dulu). Bisa dicari lewat kata kunci dan disaring per brand.',
+      inputSchema: { query: z.string().optional(), limit: z.number().int().min(1).max(100).optional(), brand: z.string().optional().describe('Saring per brand (nama atau slug). Kosong = semua brand.') },
     },
-    wrap(async ({ query, limit }) => {
-      const items = await store.listImages({ query, limit: limit ?? 20 });
-      return { content: [text(items.length ? items.map((e) => `${e.id} | ${e.file} | ${e.model} | Rp${e.costIdr} | dihapus ${e.expiresAt.slice(0, 10)} | ${(e.prompt || '').slice(0, 80)}`).join('\n') : 'Galeri kosong.')] };
+    wrap(async ({ query, limit, brand }) => {
+      const items = await service.gallery({ query, limit: limit ?? 20, brand });
+      return { content: [text(items.length ? items.map((e) => `${e.id} | ${e.file} | ${e.brandName || e.brand || '-'} | ${e.model} | Rp${e.costIdr} | dihapus ${e.expiresAt.slice(0, 10)} | ${(e.prompt || '').slice(0, 80)}`).join('\n') : 'Galeri kosong.')] };
     }),
   );
 
@@ -150,42 +151,100 @@ export function buildMcpServer() {
     }),
   );
 
-  // Style Guide tersimpan di database. Claude bisa mengelolanya langsung lewat MCP (tanpa browser).
+  // Brand + Style Guide tersimpan di database. Claude bisa mengelolanya langsung lewat MCP (tanpa browser).
   const ACTOR = 'claude (MCP)';
+  const brandArg = z.string().optional().describe('Nama atau slug brand (lihat list_brands). WAJIB bila ada lebih dari satu brand.');
+  const modelCfg = (x) => (x.model || x.fallbackModels.length ? ` | model: ${x.model || '(default)'}${x.fallbackModels.length ? ` + cadangan ${x.fallbackModels.join(', ')}` : ''}` : '');
+  const styleLine = (x) => `${x.base ? '[DASAR] ' : ''}${x.name}${x.pillar ? ` | pilar: ${x.pillar}` : ''}${modelCfg(x)} | diubah ${x.updatedAt.slice(0, 16).replace('T', ' ')} UTC oleh ${x.updatedBy} | ${x.text.slice(0, 100)}${x.text.length > 100 ? '…' : ''}`;
+  const brandBlock = (b) => {
+    const all = styles.list(b.id);
+    const gone = styles.deletedNames(b.id);
+    return `== Brand: ${b.name}${b.default ? ' [DEFAULT]' : ''} (slug: ${b.slug}) ==\n${all.length ? all.map(styleLine).join('\n') : '(belum ada Style Guide)'}${gone.length ? `\nDihapus (bisa dipulihkan dengan restore_style_guide): ${gone.join(', ')}` : ''}`;
+  };
+
+  server.registerTool(
+    'list_brands',
+    { description: 'Daftar brand yang dilayani studio ini (tiap brand punya gaya dasar + content pillar sendiri). Pakai nama/slug-nya di parameter `brand`.', inputSchema: {} },
+    wrap(async () => {
+      const gone = styles.deletedBrandNames();
+      return { content: [text(styles.listBrands().map((b) => `${b.default ? '[DEFAULT] ' : ''}${b.name} | slug: ${b.slug} | ${b.styleCount} style${b.note ? ` | ${b.note}` : ''}`).join('\n') + (gone.length ? `\nDihapus (bisa dipulihkan dengan restore_brand): ${gone.join(', ')}` : ''))] };
+    }),
+  );
+
+  server.registerTool(
+    'set_brand',
+    {
+      description: 'Tambah brand baru atau ubah brand yang ada (upsert berdasarkan nama/slug). `new_name` untuk ganti nama, `make_default=true` menjadikannya brand default. Brand baru dimulai kosong: isi gaya dasar + pillar lewat set_style_guide.',
+      inputSchema: { name: z.string().max(60), new_name: z.string().max(60).optional(), note: z.string().max(500).optional(), make_default: z.boolean().optional() },
+    },
+    wrap(async ({ name, new_name, note, make_default }) => {
+      const existing = styles.findBrand(name);
+      const patch = { ...(note !== undefined ? { note } : {}), ...(make_default !== undefined ? { default: make_default } : {}) };
+      const saved = existing ? styles.updateBrand(existing.id, { ...patch, ...(new_name ? { name: new_name } : {}) }, ACTOR) : styles.createBrand({ name, ...patch }, ACTOR);
+      return { content: [text(`Brand "${saved.name}" (slug: ${saved.slug}) ${existing ? 'diperbarui' : 'dibuat'}${saved.default ? ' (default)' : ''}.`)] };
+    }),
+  );
+
+  server.registerTool(
+    'delete_brand',
+    {
+      description: 'Hapus satu brand beserta semua Style Guide-nya (hapus lunak: bisa dipulihkan dengan restore_brand; gambar di galeri tidak ikut terhapus). Brand default tidak bisa dihapus. Aturan kantor: penghapusan butuh persetujuan Owner, isi approved=true HANYA setelah Owner (Aditya) menyetujui.',
+      inputSchema: { name: z.string(), approved: z.boolean().optional() },
+    },
+    wrap(async ({ name, approved }) => {
+      const b = styles.findBrand(name);
+      if (!b) throw new Error(`Brand "${name}" tidak ditemukan`);
+      if (!approved) throw new Error(`Menghapus brand "${b.name}" (${b.styleCount} style) butuh persetujuan Owner (Aditya). Minta persetujuan, lalu ulangi dengan approved=true.`);
+      styles.removeBrand(b.id, ACTOR);
+      return { content: [text(`Brand "${b.name}" dihapus (lunak). Pulihkan dengan restore_brand.`)] };
+    }),
+  );
+
+  server.registerTool(
+    'restore_brand',
+    { description: 'Pulihkan brand yang dihapus beserta Style Guide-nya.', inputSchema: { name: z.string() } },
+    wrap(async ({ name }) => ({ content: [text(`Brand "${styles.restoreBrand(name, ACTOR).name}" dipulihkan.`)] })),
+  );
+
   server.registerTool(
     'list_style_guides',
-    { description: 'Daftar Style Guide visual (gaya dasar + gaya per content pillar) dari database. Pakai namanya di parameter `style` pada generate_image/edit_image.', inputSchema: {} },
-    wrap(async () => {
-      const all = styles.list();
-      const gone = styles.deletedNames();
-      const line = (x) => `${x.base ? '[DASAR] ' : ''}${x.name}${x.pillar ? ` | pilar: ${x.pillar}` : ''} | diubah ${x.updatedAt.slice(0, 16).replace('T', ' ')} UTC oleh ${x.updatedBy} | ${x.text.slice(0, 100)}${x.text.length > 100 ? '…' : ''}`;
-      const body = all.length ? all.map(line).join('\n') : 'Belum ada Style Guide. Owner dapat membuatnya di Dashboard > Style Guide, atau Claude lewat set_style_guide.';
-      return { content: [text(body + (gone.length ? `\nDihapus (bisa dipulihkan dengan restore_style_guide): ${gone.join(', ')}` : ''))] };
+    { description: 'Daftar Style Guide visual (gaya dasar + gaya per content pillar, termasuk model generate tiap pillar). Tanpa `brand` dan ada banyak brand = tampilkan semua brand. Pakai nama pillar di parameter `style` pada generate_image/edit_image.', inputSchema: { brand: z.string().optional() } },
+    wrap(async ({ brand }) => {
+      const brands = brand ? [styles.resolveBrand(brand)] : styles.listBrands();
+      return { content: [text(brands.map(brandBlock).join('\n\n'))] };
     }),
   );
 
   server.registerTool(
     'get_style_guide',
-    { description: 'Baca isi lengkap satu Style Guide. Tanpa `name` = gaya dasar.', inputSchema: { name: z.string().optional() } },
-    wrap(async ({ name }) => {
-      const all = styles.list();
+    { description: 'Baca isi lengkap satu Style Guide. Tanpa `name` = gaya dasar brand.', inputSchema: { name: z.string().optional(), brand: brandArg } },
+    wrap(async ({ name, brand }) => {
+      const b = styles.pickBrand(brand);
+      const all = styles.list(b.id);
       const s = name ? styles.find(name, all) : styles.getBase(all);
-      return { content: [text(s ? `${s.name}${s.pillar ? ` (pilar: ${s.pillar})` : ''}${s.base ? ' [DASAR]' : ''}\n${s.text || '(kosong)'}` : name ? `Style "${name}" tidak ditemukan.` : '(gaya dasar belum diisi)')] };
+      return { content: [text(s ? `Brand ${b.name} | ${s.name}${s.pillar ? ` (pilar: ${s.pillar})` : ''}${s.base ? ' [DASAR]' : ''}${modelCfg(s)}\n${s.text || '(kosong)'}` : name ? `Style "${name}" tidak ditemukan di brand ${b.name}.` : `(gaya dasar brand ${b.name} belum diisi)`)] };
     }),
   );
 
   server.registerTool(
     'set_style_guide',
     {
-      description: 'Tambah atau ubah satu Style Guide berdasarkan nama (upsert). Tersimpan di database dengan riwayat revisi, jadi bisa dikembalikan. Tanpa `name` = ubah gaya dasar. `base=true` menjadikannya gaya dasar (yang selalu dipakai). Perubahan gaya dasar memengaruhi semua gambar: pastikan sudah disetujui Owner.',
-      inputSchema: { text: z.string().max(4000), name: z.string().max(60).optional(), pillar: z.string().max(60).optional(), base: z.boolean().optional() },
+      description: 'Tambah atau ubah satu Style Guide (content pillar) di sebuah brand berdasarkan nama (upsert). Tersimpan di database dengan riwayat revisi, jadi bisa dikembalikan. Tanpa `name` = ubah gaya dasar brand. `base=true` menjadikannya gaya dasar brand (yang selalu dipakai). `model` + `fallback_models` mengatur model generate khusus pillar ini (kosongkan dengan string kosong / daftar kosong untuk kembali ke default). Perubahan gaya dasar memengaruhi semua gambar brand: pastikan sudah disetujui Owner.',
+      inputSchema: {
+        text: z.string().max(4000).optional(), name: z.string().max(60).optional(), pillar: z.string().max(60).optional(), base: z.boolean().optional(), brand: brandArg,
+        model: z.string().max(80).optional().describe('ID model khusus pillar ini (lihat list_image_models). String kosong = pakai default.'),
+        fallback_models: z.array(z.string().max(80)).max(5).optional().describe('Model cadangan berurutan khusus pillar ini; kosong = pakai cadangan global.'),
+      },
     },
-    wrap(async ({ text: t, name, pillar, base }) => {
-      const all = styles.list();
+    wrap(async ({ text: t, name, pillar, base, brand, model, fallback_models }) => {
+      const b = styles.pickBrand(brand);
+      const all = styles.list(b.id);
       const existing = name ? styles.find(name, all) : styles.getBase(all);
-      const patch = { text: t, ...(pillar !== undefined ? { pillar } : {}), ...(base !== undefined ? { base } : {}) };
-      const saved = existing ? styles.update(existing.id, patch, ACTOR) : styles.create({ name: name || 'Gaya dasar', ...patch, base: base ?? !name }, ACTOR);
-      return { content: [text(`Style guide "${saved.name}" ${existing ? 'diperbarui' : 'dibuat'}${saved.base ? ' (gaya dasar)' : ''}. Riwayat tersimpan; lihat style_guide_history.`)] };
+      if (t === undefined && !existing) throw new Error('`text` wajib diisi untuk Style Guide baru');
+      await service.assertModels([model, ...(fallback_models || [])]);
+      const patch = { ...(t !== undefined ? { text: t } : {}), ...(pillar !== undefined ? { pillar } : {}), ...(base !== undefined ? { base } : {}), ...(model !== undefined ? { model } : {}), ...(fallback_models !== undefined ? { fallbackModels: fallback_models } : {}) };
+      const saved = existing ? styles.update(existing.id, patch, ACTOR) : styles.create({ brand: b.id, name: name || 'Gaya dasar', ...patch, base: base ?? !name }, ACTOR);
+      return { content: [text(`Style guide "${saved.name}" (brand ${b.name}) ${existing ? 'diperbarui' : 'dibuat'}${saved.base ? ' (gaya dasar)' : ''}${modelCfg(saved)}. Riwayat tersimpan; lihat style_guide_history.`)] };
     }),
   );
 
@@ -193,12 +252,13 @@ export function buildMcpServer() {
     'delete_style_guide',
     {
       description: 'Hapus satu Style Guide (hapus lunak: masih bisa dipulihkan dengan restore_style_guide). Aturan kantor: penghapusan butuh persetujuan Owner, jadi isi approved=true HANYA setelah Owner (Aditya) menyetujui.',
-      inputSchema: { name: z.string(), approved: z.boolean().optional() },
+      inputSchema: { name: z.string(), brand: brandArg, approved: z.boolean().optional() },
     },
-    wrap(async ({ name, approved }) => {
-      const s = styles.find(name);
-      if (!s) throw new Error(`Style "${name}" tidak ditemukan`);
-      if (!approved) throw new Error(`Menghapus "${s.name}" butuh persetujuan Owner (Aditya). Minta persetujuan, lalu ulangi dengan approved=true.`);
+    wrap(async ({ name, brand, approved }) => {
+      const b = styles.pickBrand(brand);
+      const s = styles.find(name, styles.list(b.id));
+      if (!s) throw new Error(`Style "${name}" tidak ditemukan di brand ${b.name}`);
+      if (!approved) throw new Error(`Menghapus "${s.name}" (brand ${b.name}) butuh persetujuan Owner (Aditya). Minta persetujuan, lalu ulangi dengan approved=true.`);
       styles.remove(s.id, ACTOR);
       return { content: [text(`Style "${s.name}" dihapus (lunak). Pulihkan dengan restore_style_guide.`)] };
     }),
@@ -206,18 +266,18 @@ export function buildMcpServer() {
 
   server.registerTool(
     'style_guide_history',
-    { description: 'Riwayat perubahan satu Style Guide (siapa, kapan, isi). Pakai revision id untuk restore_style_guide.', inputSchema: { name: z.string(), limit: z.number().int().min(1).max(50).optional() } },
-    wrap(async ({ name, limit }) => ({
-      content: [text(styles.history(name, limit ?? 10).map((r) => `rev ${r.id} | ${r.at.slice(0, 16).replace('T', ' ')} UTC | ${r.action} oleh ${r.actor} | ${r.name} | ${r.text.slice(0, 120)}${r.text.length > 120 ? '…' : ''}`).join('\n'))],
+    { description: 'Riwayat perubahan satu Style Guide (siapa, kapan, isi, model). Pakai revision id untuk restore_style_guide.', inputSchema: { name: z.string(), brand: brandArg, limit: z.number().int().min(1).max(50).optional() } },
+    wrap(async ({ name, brand, limit }) => ({
+      content: [text(styles.history(name, limit ?? 10, brand).map((r) => `rev ${r.id} | ${r.at.slice(0, 16).replace('T', ' ')} UTC | ${r.action} oleh ${r.actor} | ${r.name}${r.model ? ` | model: ${r.model}` : ''} | ${r.text.slice(0, 120)}${r.text.length > 120 ? '…' : ''}`).join('\n'))],
     })),
   );
 
   server.registerTool(
     'restore_style_guide',
-    { description: 'Pulihkan Style Guide yang dihapus (isi name), atau kembalikan isi ke revisi tertentu (isi revision_id dari style_guide_history).', inputSchema: { name: z.string().optional(), revision_id: z.number().int().optional() } },
-    wrap(async ({ name, revision_id }) => {
+    { description: 'Pulihkan Style Guide yang dihapus (isi name + brand), atau kembalikan isi ke revisi tertentu (isi revision_id dari style_guide_history).', inputSchema: { name: z.string().optional(), brand: brandArg, revision_id: z.number().int().optional() } },
+    wrap(async ({ name, brand, revision_id }) => {
       if (name === undefined && revision_id === undefined) throw new Error('Isi name atau revision_id');
-      const s = styles.restore({ ref: name, revisionId: revision_id }, ACTOR);
+      const s = styles.restore({ ref: name, revisionId: revision_id, brand }, ACTOR);
       return { content: [text(`Style "${s.name}" dipulihkan.`)] };
     }),
   );

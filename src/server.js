@@ -177,12 +177,35 @@ export function createApp() {
     } catch (e) { next(e); }
   });
   api.get('/gallery', async (req, res, next) => {
-    try { res.json(await store.listImages({ limit: Number(req.query.limit) || 60, query: req.query.q })); } catch (e) { next(e); }
+    try { res.json(await service.gallery({ limit: Number(req.query.limit) || 60, query: req.query.q, brand: req.query.brand })); } catch (e) { next(e); }
   });
-  api.get('/styles', (_req, res) => res.json({ styles: styles.list(), pillars: styles.PILLAR_DRAFTS.map(([n]) => n) }));
-  api.post('/styles/seed-pillars', (_req, res, next) => { try { res.json(styles.seedPillars()); } catch (e) { next(e); } });
-  api.post('/styles', (req, res, next) => { try { res.status(201).json(styles.create(req.body || {})); } catch (e) { next(e); } });
-  api.put('/styles/:id', (req, res, next) => { try { res.json(styles.update(req.params.id, req.body || {})); } catch (e) { next(e); } });
+
+  // ---- Brand ----
+  api.get('/brands', (_req, res, next) => { try { res.json({ brands: styles.listBrands() }); } catch (e) { next(e); } });
+  api.post('/brands', (req, res, next) => { try { res.status(201).json(styles.createBrand(req.body || {})); } catch (e) { next(e); } });
+  api.put('/brands/:id', (req, res, next) => { try { res.json(styles.updateBrand(req.params.id, req.body || {})); } catch (e) { next(e); } });
+  api.delete('/brands/:id', (req, res, next) => { try { styles.removeBrand(req.params.id); res.json({ ok: true }); } catch (e) { next(e); } });
+
+  // ---- Style Guide per brand (gaya dasar + pillar, tiap pillar boleh punya model sendiri) ----
+  api.get('/styles', (req, res, next) => {
+    try {
+      const brand = styles.resolveBrand(req.query.brand);
+      res.json({ brand, styles: styles.list(brand.id), pillars: styles.pillarDraftNames(brand.slug) });
+    } catch (e) { next(e); }
+  });
+  api.post('/styles/seed-pillars', (req, res, next) => { try { res.json(styles.seedPillars('web', req.body?.brand)); } catch (e) { next(e); } });
+  api.post('/styles', async (req, res, next) => {
+    try {
+      await service.assertModels([req.body?.model, ...(Array.isArray(req.body?.fallbackModels) ? req.body.fallbackModels : [])]);
+      res.status(201).json(styles.create(req.body || {}));
+    } catch (e) { next(e); }
+  });
+  api.put('/styles/:id', async (req, res, next) => {
+    try {
+      await service.assertModels([req.body?.model, ...(Array.isArray(req.body?.fallbackModels) ? req.body.fallbackModels : [])]);
+      res.json(styles.update(req.params.id, req.body || {}));
+    } catch (e) { next(e); }
+  });
   api.delete('/styles/:id', (req, res, next) => { try { styles.remove(req.params.id); res.json({ ok: true }); } catch (e) { next(e); } });
   app.use('/api', api);
 

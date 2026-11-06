@@ -3,10 +3,11 @@
 Aplikasi web + MCP server untuk generate dan edit gambar kebutuhan **Kantor AI Teman Seller** lewat API [kenari.id](https://kenari.id) (kompatibel OpenAI Images). Dipakai Kenzo (Illustrator) dan tim lewat Claude (MCP) atau langsung di browser.
 
 ## Fitur
+- **Multi-brand**: satu studio melayani banyak brand. Tiap brand punya **gaya dasar** dan banyak **content pillar** dengan style berbeda, dan tiap pillar bisa punya **model generate + model cadangan sendiri**. Galeri bisa disaring per brand.
 - **Web UI** bergaya admin dashboard (Tailwind CSS, palet ala TailAdmin, mode gelap, responsif): Dashboard, Generate, Edit gambar, Galeri (grid gambar + nama file + salin URL, detail di lightbox), Batas Biaya, Style Guide, Koneksi MCP.
 - **Login web**: halaman `/login` dengan `ADMIN_USER` dan `ADMIN_PASSWORD` dari `.env` (ganti password = semua sesi lama otomatis keluar). Cookie HttpOnly, SameSite=Lax, 5 kali gagal = terkunci 15 menit per IP. Claude (MCP) memakai `ACCESS_TOKEN` terpisah (bearer), cookie login tidak berlaku di `/mcp`.
 - **Batas biaya di dashboard** (menu Batas Biaya): harian, mingguan (mulai Senin), bulanan, ambang persetujuan Owner, dan maksimal gambar per permintaan. Nilai awal dari `.env`, perubahan disimpan di `data/settings.json`. Claude tidak punya tool untuk mengubah batas ini. Buku biaya (`data/ledger.jsonl`) tetap ada walau gambar sudah dihapus retensi.
-- **MCP server** (Streamable HTTP di `/mcp` dan mode stdio): `generate_image`, `edit_image`, `list_image_models`, `estimate_cost`, `list_gallery`, `get_image`, `get_style_guide`, `set_style_guide`.
+- **MCP server** (Streamable HTTP di `/mcp` dan mode stdio): `generate_image`, `edit_image`, `list_image_models`, `estimate_cost`, `list_gallery`, `get_image`, `get_image_public_url`, brand (`list_brands`, `set_brand`, `delete_brand`, `restore_brand`) dan Style Guide per brand (`list_style_guides`, `get_style_guide`, `set_style_guide`, `style_guide_history`, `restore_style_guide`, `delete_style_guide`).
 - Nama file otomatis sesuai aturan kantor: `YYYY-MM-DD_Kenzo_Judul-Singkat_v1_01.png`.
 - **Penjaga biaya** (aturan kantor bagian 6, pengeluaran uang butuh persetujuan Owner):
   - Batas harian/mingguan/bulanan (WIB) adalah batas keras, tidak bisa dilewati walau `approved=true`. Atur di web (Batas Biaya) atau nilai awalnya lewat `DAILY_BUDGET_IDR`, `WEEKLY_BUDGET_IDR`, `MONTHLY_BUDGET_IDR`.
@@ -14,7 +15,21 @@ Aplikasi web + MCP server untuk generate dan edit gambar kebutuhan **Kantor AI T
   - Gagal dari kenari (termasuk error berstatus 200) tidak dicatat sebagai biaya.
 - **Gambar bersifat sementara**: dihapus permanen otomatis setelah `RETENTION_DAYS` (default 7 hari). Penyapu berjalan saat server start dan tiap jam; gambar kedaluwarsa langsung disembunyikan dari galeri dan MCP. Hanya jejak audit (id, nama file, waktu) yang tersisa di `data/deleted.log`. Kebijakan ini ditetapkan Owner; unduh gambar yang masih dipakai sebelum waktunya.
 - **Teruskan ke Social Hub (threads.delova.id)**: tool `get_image_public_url` membuat tautan HTTPS bertanda tangan dan berbatas waktu (maks 24 jam, tidak pernah melewati masa simpan gambar). Claude lalu memanggil `upload_media(source_url=...)` milik Threads_Hub, dan memakai URL hasilnya di `create_post`/`create_ig_post`. Ini hanya mengunggah ke media library hub: tayang/approve tetap butuh persetujuan Owner.
-- Style Guide visual (`data/style.txt`) otomatis ditambahkan ke prompt.
+- Style Guide brand (gaya dasar + pillar terpilih) otomatis ditambahkan ke prompt, disimpan di `data/studio.db`.
+
+## Multi-brand, content pillar, dan model per pillar
+```
+Brand (mis. Delova Kids)
+ ├─ Gaya dasar      → selalu dipakai untuk brand ini (+ model default brand, opsional)
+ ├─ Pillar "Hari Raya"   → gaya sendiri + model & cadangan sendiri
+ └─ Pillar "Studio Foto" → gaya sendiri + model & cadangan sendiri
+```
+- **Brand**: kelola di Dashboard > Style Guide (+ Brand baru / Ubah brand) atau lewat Claude (`set_brand`). Brand default dibuat otomatis (`DEFAULT_BRAND_NAME`, awalnya "Teman Seller"); data lama dari versi sebelum multi-brand otomatis menjadi milik brand ini. Brand default tidak bisa dihapus. Hapus brand = hapus lunak, bisa dipulihkan (`restore_brand`).
+- **Pillar**: nama boleh sama di brand berbeda. Satu gaya dasar per brand.
+- **Urutan model** saat generate/edit: model yang dipilih manual > model pillar terpilih > model gaya dasar brand > default global (Dashboard > Konfigurasi). Di web, pilihan "Otomatis" pada Model mengikuti aturan ini. Model cadangan pillar menimpa cadangan global; semua cadangan tetap lewat penjaga biaya yang sama.
+- **Aman dari salah brand**: bila ada lebih dari satu brand, Generate/Edit lewat API/MCP dan semua perubahan Style Guide wajib menyebut `brand`; kalau tidak, ditolak sebelum memanggil kenari.
+- Galeri mencatat brand + pillar tiap gambar dan bisa disaring per brand (`GET /api/gallery?brand=`, `list_gallery(brand=)`). Gambar lama masuk brand default.
+- API: `GET/POST /api/brands`, `PUT/DELETE /api/brands/:id`, `GET /api/styles?brand=`, `POST /api/styles` (`brand`, `model`, `fallbackModels`), `POST /api/generate` & `/api/edit` (`brand`, `style`).
 
 ## Mulai cepat
 Butuh Node.js 22.13+ (database memakai node:sqlite bawaan).
@@ -78,7 +93,8 @@ Di VPS: set `HOST=0.0.0.0`, `ACCESS_TOKEN` yang kuat, `PUBLIC_URL`, jalankan di 
 src/config.js   konfigurasi .env
 src/kenari.js   klien API kenari.id (generations, edits, models)
 src/service.js  estimasi biaya + penjaga budget/approval
-src/store.js    simpan gambar + index + style guide
+src/store.js    simpan gambar + index (+ brand tiap gambar)
+src/styles.js   database SQLite: brand, gaya dasar + pillar, model per pillar, riwayat
 src/mcp.js      definisi tool MCP
 src/server.js   web + REST + /mcp
 src/stdio.js    MCP via stdio

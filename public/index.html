@@ -77,9 +77,11 @@
             <label class="lbl">Ukuran (petunjuk)</label>
             <div id="g-sizes" class="mb-2 flex flex-wrap gap-2"></div>
             <input id="g-size" class="field" placeholder="1024x1024">
-            <label class="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" id="g-style" checked class="h-4 w-4 accent-primary"> Pakai Style Guide Teman Seller</label>
+            <div id="g-brand-wrap"><label class="lbl" for="g-brand">Brand</label><select id="g-brand" class="field"></select></div>
+            <label class="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" id="g-style" checked class="h-4 w-4 accent-primary"> <span id="g-style-label">Pakai Style Guide</span></label>
             <label class="lbl" for="g-style-pick">Style content pillar</label>
             <select id="g-style-pick" class="field"></select>
+            <p id="g-pillar-model" class="mt-1 text-xs"></p>
             <label class="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" id="g-opaque" class="h-4 w-4 accent-primary"> Latar transparan (PNG)</label>
             <div id="g-est" class="mt-4 rounded-lg bg-graylight p-3 text-sm dark:bg-bodydark"></div>
             <label id="g-appr-wrap" hidden class="mt-3 flex items-center gap-2 rounded-lg border border-warning p-3 text-sm"><input type="checkbox" id="g-appr" class="h-4 w-4 accent-primary"> Owner (Aditya) sudah menyetujui biaya ini</label>
@@ -109,8 +111,10 @@
               <div><label class="lbl" for="e-n">Jumlah</label><input id="e-n" type="number" min="1" value="1" class="field"></div>
               <div><label class="lbl" for="e-title">Judul file</label><input id="e-title" class="field" placeholder="Edit Maskot"></div>
             </div>
+            <div id="e-brand-wrap"><label class="lbl" for="e-brand">Brand</label><select id="e-brand" class="field"></select></div>
             <label class="lbl" for="e-style-pick">Style Guide</label>
             <select id="e-style-pick" class="field"></select>
+            <p id="e-pillar-model" class="mt-1 text-xs"></p>
             <div id="e-est" class="mt-4 rounded-lg bg-graylight p-3 text-sm dark:bg-bodydark"></div>
             <label id="e-appr-wrap" hidden class="mt-3 flex items-center gap-2 rounded-lg border border-warning p-3 text-sm"><input type="checkbox" id="e-appr" class="h-4 w-4 accent-primary"> Owner (Aditya) sudah menyetujui biaya ini</label>
             <div class="mt-4"><button id="e-go" class="btn">Edit gambar</button></div>
@@ -122,7 +126,7 @@
 
       <!-- Galeri -->
       <section data-page="gal" hidden>
-        <div class="card mb-4"><input id="q" class="field" placeholder="Cari prompt atau nama file"></div>
+        <div class="card mb-4 flex flex-wrap gap-3"><input id="q" class="field" style="flex:1 1 16rem;width:auto" placeholder="Cari prompt, nama file, brand, atau pillar"><select id="gal-brand" class="field" style="flex:0 1 14rem;width:auto"></select></div>
         <div id="gal-grid" class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5"></div>
       </section>
 
@@ -213,12 +217,35 @@
 
       <!-- Style -->
       <section data-page="style" hidden>
+        <div class="card mb-6">
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="text-sm font-medium text-bodydark dark:text-white" for="br-pick">Brand</label>
+            <select id="br-pick" class="field" style="flex:1 1 14rem;width:auto;max-width:22rem"></select>
+            <button id="br-new" type="button" class="btn-ghost">+ Brand baru</button>
+            <button id="br-edit" type="button" class="btn-ghost">Ubah brand</button>
+          </div>
+          <p class="mt-2 text-sm">Setiap brand punya <b>gaya dasar</b> dan <b>content pillar</b> sendiri, lengkap dengan model generate masing-masing pillar.</p>
+          <div id="br-form" hidden class="mt-4 rounded-lg border border-stroke p-4 dark:border-strokedark">
+            <h3 id="br-title" class="text-sm font-semibold text-bodydark dark:text-white">Brand baru</h3>
+            <label class="lbl" for="br-name">Nama brand</label>
+            <input id="br-name" class="field" maxlength="60" placeholder="Contoh: Delova Kids">
+            <label class="lbl" for="br-note">Catatan (opsional)</label>
+            <input id="br-note" class="field" maxlength="500" placeholder="Contoh: baju anak perempuan, nuansa ceria">
+            <label class="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" id="br-default" class="h-4 w-4 accent-primary"> Jadikan brand default</label>
+            <div class="mt-4 flex flex-wrap items-center gap-3">
+              <button id="br-save" type="button" class="btn">Simpan brand</button>
+              <button id="br-cancel" type="button" class="btn-ghost">Batal</button>
+              <button id="br-del" type="button" class="btn-ghost hidden">Hapus brand</button>
+            </div>
+            <p id="br-msg" class="mt-3 text-sm"></p>
+          </div>
+        </div>
         <div class="grid gap-6 xl:grid-cols-3">
           <div class="card xl:col-span-1">
             <div class="flex items-start justify-between gap-3">
               <div>
                 <h2 class="text-base font-semibold text-bodydark dark:text-white">Daftar Style Guide</h2>
-                <p class="mt-1 text-sm">Satu <b>gaya dasar</b> yang selalu dipakai, ditambah gaya per content pillar yang dipilih saat generate.</p>
+                <p class="mt-1 text-sm">Satu <b>gaya dasar</b> brand yang selalu dipakai, ditambah gaya per content pillar yang dipilih saat generate.</p>
               </div>
             </div>
             <div class="mt-4 flex flex-wrap gap-2">
@@ -236,6 +263,11 @@
             <label class="lbl" for="st-pillar">Content pillar (opsional)</label>
             <input id="st-pillar" class="field" maxlength="60" list="st-pillars" placeholder="Pilih atau ketik pilar">
             <datalist id="st-pillars"></datalist>
+            <div class="grid gap-3 md:grid-cols-2">
+              <div><label class="lbl" for="st-model">Model generate pillar ini</label><select id="st-model" class="field"></select></div>
+              <div><label class="lbl" for="st-fallbacks">Model cadangan pillar ini</label><input id="st-fallbacks" class="field font-mono" list="st-models" placeholder="id-model, id-model (maks 5, urut)"><datalist id="st-models"></datalist></div>
+            </div>
+            <p class="mt-1 text-xs">Kosong = ikut model default di Konfigurasi. Model yang dipilih di form Generate tetap menang. Untuk gaya dasar: berlaku bagi semua pillar brand yang tidak punya model sendiri.</p>
             <label class="lbl" for="st-text">Arahan gaya visual</label>
             <textarea id="st-text" rows="8" maxlength="4000" class="field" placeholder="Contoh: flat illustration hangat, palet oranye-krem, garis tebal rapi, maskot orisinal Teman Seller, tanpa teks di gambar"></textarea>
             <label class="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" id="st-base" class="h-4 w-4 accent-primary"> Jadikan gaya dasar (selalu ditambahkan jika Style Guide aktif)</label>

@@ -70,6 +70,7 @@ networks:
 YML
 
 say "4/5 Menjalankan container"
+export PUBLIC_URL="https://${DOMAIN}"
 HOST_PORT="$HOST_PORT" docker compose up -d --build
 for _ in $(seq 1 30); do
   curl -fsS "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null 2>&1 && break
