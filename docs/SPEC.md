@@ -1,9 +1,9 @@
-# SPEC: Teman Seller Studio v0.1
+# SPEC: Delova Studio v0.1 (sebelumnya Teman Seller Studio)
 
 Penulis: Dito (Software Dev) · Koordinator: Raka · Pengguna utama: Kenzo (Illustrator), Bita, Alya · Tanggal: 2026-11-04
 
 ## Tujuan
-Satu tempat untuk generate/edit gambar kebutuhan konten Teman Seller, bisa dipakai manual (web) dan oleh Claude (MCP), dengan kontrol biaya sesuai aturan kantor.
+Satu tempat untuk generate/edit gambar kebutuhan konten Delova dan brand lain yang dilayani, bisa dipakai manual (web) dan oleh Claude (MCP), dengan kontrol biaya sesuai aturan kantor.
 
 ## Pembagian tim
 | Karyawan | Tugas |

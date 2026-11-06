@@ -272,7 +272,7 @@ if (process.argv[1] === import.meta.filename) {
     }
   }
   createApp().listen(config.port, config.host, () => {
-    console.log(`Teman Seller Studio: http://${config.host}:${config.port}  (MCP: /mcp)`);
+    console.log(`Delova Studio: http://${config.host}:${config.port}  (MCP: /mcp)`);
     if (!secrets.getApiKey()) console.warn('Peringatan: API key kenari belum diisi (isi di Dashboard > Konfigurasi atau KENARI_API_KEY di .env).');
   });
 }

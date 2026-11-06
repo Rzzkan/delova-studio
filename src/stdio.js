@@ -6,4 +6,4 @@ import { init, startSweeper } from './store.js';
 await init();
 startSweeper();
 await buildMcpServer().connect(new StdioServerTransport());
-console.error('teman-seller-studio MCP (stdio) siap');
+console.error('delova-studio MCP (stdio) siap');

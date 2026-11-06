@@ -482,7 +482,7 @@ async function init() {
   $('#logout').onclick = async () => { await fetch('/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); location.replace('/login'); };
   $('#token').value = tokenGet();
   $('#mcp-url-copy').onclick = () => copy($('#mcp-url').textContent, $('#mcp-url-msg'), 'URL konektor disalin');
-  $('#mcp-http').textContent = `claude mcp add --transport http teman-seller-studio ${location.origin}/mcp --header "Authorization: Bearer <ACCESS_TOKEN>"`;
+  $('#mcp-http').textContent = `claude mcp add --transport http delova-studio ${location.origin}/mcp --header "Authorization: Bearer <ACCESS_TOKEN>"`;
   $('#token-save').onclick = () => { store.set('tk', $('#token').value); location.reload(); };
   window.addEventListener('hashchange', route);
   $('#lb-close').onclick = closeLightbox;

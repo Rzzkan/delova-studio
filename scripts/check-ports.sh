@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cek port yang kosong di VPS sebelum deploy Teman Seller Studio. Hanya membaca, tidak mengubah apa pun.
+# Cek port yang kosong di VPS sebelum deploy Delova Studio. Hanya membaca, tidak mengubah apa pun.
 # Pakai: bash scripts/check-ports.sh            (rentang 3400-3499)
 #        bash scripts/check-ports.sh 3400 3450
 START="${1:-3400}"; END="${2:-3499}"
@@ -24,5 +24,4 @@ for p in $(seq "$START" "$END"); do
   if ! grep -qx "$p" <<<"$used"; then echo "$p"; free=$((free+1)); [ "$free" -ge 10 ] && break; fi
 done
 [ "$free" -eq 0 ] && echo "(tidak ada yang kosong, coba rentang lain)"
-echo; echo "Catatan: port 3300 sudah dipakai TemanSeller server (127.0.0.1:3300)."
 echo "Reverse proxy yang aktif:"; (ss -ltnp 2>/dev/null | grep -E ':(80|443)\b' | head -3) || true

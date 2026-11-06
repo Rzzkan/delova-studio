@@ -50,7 +50,7 @@ const common = {
 };
 
 export function buildMcpServer() {
-  const server = new McpServer({ name: 'teman-seller-studio', version: '0.1.0' });
+  const server = new McpServer({ name: 'delova-studio', version: '0.1.0' });
 
   server.registerTool(
     'list_image_models',
@@ -71,11 +71,11 @@ export function buildMcpServer() {
     'generate_image',
     {
       description:
-        'Generate gambar dari teks lewat kenari.id. Hasil disimpan di galeri Teman Seller Studio. Mengeluarkan uang: jika biaya melewati ambang, butuh persetujuan Owner (approved=true).',
+        'Generate gambar dari teks lewat kenari.id. Hasil disimpan di galeri Delova Studio. Mengeluarkan uang: jika biaya melewati ambang, butuh persetujuan Owner (approved=true).',
       inputSchema: {
         prompt: z.string().min(3).describe('Deskripsi gambar.'),
         background: z.enum(['transparent', 'opaque', 'auto']).optional(),
-        use_style_guide: z.boolean().optional().describe('Tambahkan Style Guide Teman Seller ke prompt (default true).'),
+        use_style_guide: z.boolean().optional().describe('Tambahkan Style Guide brand ke prompt (default true).'),
         ...common,
       },
     },

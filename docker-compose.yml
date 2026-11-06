@@ -2,12 +2,12 @@
 services:
   studio:
     build: .
-    container_name: ${APP_NAME:-teman-seller-studio}   # ganti (APP=...) bila ada instance lain di VPS yang sama
+    container_name: ${APP_NAME:-delova-studio}   # ganti (APP=...) bila ada instance lain di VPS yang sama
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      PUBLIC_URL: ${PUBLIC_URL:-https://studio.temanseller.com}   # skrip deploy mengisinya dari DOMAIN
+      PUBLIC_URL: ${PUBLIC_URL:-https://studio.delova.id}   # skrip deploy mengisinya dari DOMAIN
       HOST: 0.0.0.0
       PORT: "3000"
     ports:

@@ -1,6 +1,6 @@
-# Teman Seller Studio
+# Delova Studio
 
-Aplikasi web + MCP server untuk generate dan edit gambar kebutuhan **Kantor AI Teman Seller** lewat API [kenari.id](https://kenari.id) (kompatibel OpenAI Images). Dipakai Kenzo (Illustrator) dan tim lewat Claude (MCP) atau langsung di browser.
+Aplikasi web + MCP server untuk generate dan edit gambar kebutuhan **Kantor AI Delova** lewat API [kenari.id](https://kenari.id) (kompatibel OpenAI Images). Dipakai Kenzo (Illustrator) dan tim lewat Claude (MCP) atau langsung di browser.
 
 ## Fitur
 - **Multi-brand**: satu studio melayani banyak brand. Tiap brand punya **gaya dasar** dan banyak **content pillar** dengan style berbeda, dan tiap pillar bisa punya **model generate + model cadangan sendiri**. Galeri bisa disaring per brand.
@@ -52,7 +52,7 @@ Mengubah tampilan: edit `public/*.html|js`, lalu `npm run build:css` (Tailwind C
 
 **Claude Code (HTTP)**, server harus sedang berjalan:
 ```bash
-claude mcp add --transport http teman-seller-studio http://127.0.0.1:3400/mcp \
+claude mcp add --transport http delova-studio http://127.0.0.1:3400/mcp \
   --header "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 (Header hanya perlu jika `ACCESS_TOKEN` diisi.)
@@ -61,9 +61,9 @@ claude mcp add --transport http teman-seller-studio http://127.0.0.1:3400/mcp \
 ```json
 {
   "mcpServers": {
-    "teman-seller-studio": {
+    "delova-studio": {
       "command": "node",
-      "args": ["C:\\Users\\Aditya Nur Riskan N\\Documents\\Teman Seller\\teman-seller-studio\\src\\stdio.js"]
+      "args": ["C:\\Users\\Aditya Nur Riskan N\\Documents\\Delova Wardrobe\\delova-studio\\src\\stdio.js"]
     }
   }
 }
@@ -84,7 +84,7 @@ Mode stdio membaca `.env` di folder proyek, jadi key tidak ditaruh di config Cla
 Syarat: server Hub harus bisa mengakses Studio lewat HTTPS publik, jadi `PUBLIC_URL` wajib diisi dan Studio harus ter-deploy (lihat bagian berikut). Di `localhost` langkah 2 menolak dengan pesan jelas.
 
 ## Deploy (butuh persetujuan Owner)
-Panduan lengkap: `docs/DEPLOY.md` (Docker Compose, `scripts/check-ports.sh`, contoh Nginx/Caddy untuk `studio.temanseller.com`).
+Panduan lengkap: `docs/DEPLOY.md` (Docker Compose, `scripts/check-ports.sh`, contoh Nginx/Caddy untuk `studio.delova.id`).
 
 Di VPS: set `HOST=0.0.0.0`, `ACCESS_TOKEN` yang kuat, `PUBLIC_URL`, jalankan di belakang HTTPS reverse proxy. Server menolak start jika `HOST` bukan localhost dan `ACCESS_TOKEN` kosong.
 
