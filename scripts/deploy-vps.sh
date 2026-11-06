@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Deploy Teman Seller Studio ke VPS dan sambungkan ke Caddy (Docker). Aman dijalankan ulang.
+# Deploy Studio ke VPS dan sambungkan ke Caddy (Docker). Aman dijalankan ulang.
+# Contoh instance Delova di VPS yang sudah punya teman-seller-studio:
+#   APP=delova-studio DOMAIN=studio.delova.id HOST_PORT=3410 bash scripts/deploy-vps.sh
 # Yang disentuh: folder ini (.env, docker-compose.override.yml), container teman-seller-studio,
 # dan Caddyfile milik Caddy (dibackup dulu, divalidasi, otomatis dikembalikan jika gagal).
 set -euo pipefail
 DOMAIN="${DOMAIN:-studio.temanseller.com}"
 HOST_PORT="${HOST_PORT:-3400}"
 CADDY="${CADDY:-delova-caddy-1}"
-APP=teman-seller-studio
+APP="${APP:-teman-seller-studio}"   # nama container; wajib beda per instance di satu VPS
+export APP_NAME="$APP"
 cd "$(dirname "$0")/.."
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }

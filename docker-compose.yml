@@ -2,7 +2,7 @@
 services:
   studio:
     build: .
-    container_name: teman-seller-studio
+    container_name: ${APP_NAME:-teman-seller-studio}   # ganti (APP=...) bila ada instance lain di VPS yang sama
     restart: unless-stopped
     env_file:
       - .env
