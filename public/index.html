@@ -194,12 +194,14 @@
               <label class="flex items-center gap-2 text-sm"><input id="kie-enabled" type="checkbox"> Aktifkan kie.ai sebagai cadangan otomatis</label>
               <label class="lbl" for="kie-model">Model default kie (teks → gambar)</label><select id="kie-model" class="field"></select>
               <label class="lbl" for="kie-edit-model">Model default kie (edit gambar)</label><select id="kie-edit-model" class="field"></select>
-              <div class="mt-4 flex items-center gap-3"><button id="kie-settings-save" type="button" class="btn">Simpan pengaturan kie</button></div>
+              <div class="mt-4 flex flex-wrap items-center gap-3"><button id="kie-settings-save" type="button" class="btn">Simpan pengaturan kie</button><button id="kie-sync" type="button" class="btn-ghost">Ambil daftar model dari kie.ai</button></div>
+              <p id="kie-sync-info" class="mt-2 text-xs"></p>
               <p id="kie-settings-msg" class="mt-3 text-sm"></p>
               <h3 class="mt-5 text-sm font-semibold text-bodydark dark:text-white">Tambah / ubah harga model kie</h3>
               <p class="mt-1 text-xs">Katalog bawaan hanya memuat model yang sudah diverifikasi. Model lain: isi ID persis seperti di docs kie.ai dan harga kredit per gambar (lihat kie.ai/pricing). Model tanpa harga selalu butuh persetujuan Owner.</p>
               <div class="mt-2 flex gap-2"><input id="kie-custom-id" class="field mt-0" placeholder="ID model, mis. google/nano-banana"><input id="kie-custom-credits" type="number" min="0" step="0.1" class="field mt-0" style="width:7rem" placeholder="kredit"><button id="kie-custom-add" type="button" class="btn-ghost shrink-0">Simpan</button></div>
-              <div id="kie-models" class="mt-3 space-y-1 text-xs"></div>
+              <input id="kie-filter" class="field mt-3" placeholder="Cari model kie (mis. banana, seedream, flux)">
+              <div id="kie-models" class="mt-2 max-h-72 space-y-1 overflow-y-auto pr-1 text-xs"></div>
             </div>
           </div>
         </div>

@@ -10,6 +10,8 @@ const models = JSON.parse(readFileSync(new URL('./fixtures/models.json', import.
 let mock, base, app, appBase, calls = [], failNext = false, failModels = new Set();
 let kieMock, kieBase, kieCalls = [], kieFail = null, kieBalance = 1000, kiePolls = new Map();
 const KIE_CREDITS_PER_TASK = 4;
+// Halaman docs model kie.ai (potongan OpenAPI) dengan indentasi seperti aslinya.
+const kiePage = (id, inputLines) => `# T\n\n\`\`\`yaml\n            schema:\n              type: object\n              properties:\n                model:\n                  default: ${id}\n                  enum:\n                    - ${id}\n            example:\n              model: ${id}\n              callBackUrl: https://x/cb\n              input:\n${inputLines.map((l) => ' '.repeat(16) + l).join('\n')}\n      responses:\n        '200':\n`;
 
 before(async () => {
   mock = http.createServer((req, res) => {
@@ -42,6 +44,18 @@ before(async () => {
       const body = Buffer.concat(chunks).toString();
       const auth = req.headers.authorization || '';
       const json = (o) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(o)); };
+      if (u.pathname === '/llms.txt') {
+        res.setHeader('Content-Type', 'text/plain');
+        return res.end([
+          `- Image    Models > Google [Google - Nano Banana](${kieBase}/market/google/nano-banana.md): x`,
+          `- Image    Models > Vendor [Vendor - Edit X](${kieBase}/market/vendor/edit-x.md): x`,
+          `- Image    Models > Vendor [Vendor - Upscale](${kieBase}/market/vendor/image-upscale.md): x`,
+          `- Image    Models > Vendor [Terjemahan](${kieBase}/cn/market/vendor/edit-x.md): x`,
+          `- Video    Models > Vendor [Video](${kieBase}/market/vendor/video.md): x`,
+        ].join('\n'));
+      }
+      if (u.pathname === '/market/google/nano-banana.md') return res.end(kiePage('google/nano-banana', ['prompt: a', 'output_format: png', "aspect_ratio: '1:1'"]));
+      if (u.pathname === '/market/vendor/edit-x.md') return res.end(kiePage('vendor/edit-x', ['prompt: a', 'image_url: https://x/y.png', "aspect_ratio: '1:1'"]));
       if (u.pathname === '/files/hasil.png') { res.setHeader('Content-Type', 'image/png'); return res.end(PNG); }
       if (auth.endsWith('kie-kunci-salah-0123456789')) return json({ code: 401, msg: 'You do not have access permissions' });
       if (u.pathname === '/api/v1/chat/credit') return json({ code: 200, msg: 'success', data: kieBalance });
@@ -68,6 +82,7 @@ before(async () => {
   process.env.KIE_BASE_URL = kieBase;
   process.env.KIE_UPLOAD_URL = kieBase;
   process.env.KIE_POLL_MS = '10';
+  process.env.KIE_DOCS_URL = kieBase;
   process.env.KENARI_BASE_URL = base;
   process.env.KENARI_API_KEY = 'kn-test';
   process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'tss-'));
@@ -972,5 +987,56 @@ test('kie.ai lewat MCP: kie_status dan estimate_cost provider=kie', async () => 
   const est = JSON.parse((await client.callTool({ name: 'estimate_cost', arguments: { provider: 'kie', n: 2 } })).content[0].text);
   assert.equal(est.provider, 'kie');
   await client.close();
+  secrets.clearKieKey();
+});
+
+test('kie.ai: daftar model diambil dari dokumentasi, pilihan model fleksibel, input mengikuti skema model', async () => {
+  const secrets = await import('../src/secrets.js');
+  secrets.setKieKey('kie-test-key-0123456789abcd');
+  const put = (b) => fetch(appBase + '/api/settings', { method: 'PUT', headers: H, body: JSON.stringify(b) });
+  const before = await (await fetch(appBase + '/api/kie/models', { headers: H })).json();
+  assert.ok(!before.some((m) => m.id === 'vendor/edit-x'));
+
+  const r = await post('/api/kie/models/sync', {});
+  assert.equal(r.status, 200);
+  const sync = await r.json();
+  assert.equal(sync.count, 2, 'upscale, terjemahan /cn/, dan video dilewati');
+  const m = sync.models.find((x) => x.id === 'vendor/edit-x');
+  assert.deepEqual([m.kind, m.group, m.synced, m.credits], ['edit', 'Vendor', true, null]);
+  assert.equal(sync.models.find((x) => x.id === 'google/nano-banana').credits, 4, 'harga katalog tetap');
+  assert.ok((await (await fetch(appBase + '/api/kie/status', { headers: H })).json()).modelsFetchedAt);
+
+  // model tanpa harga -> butuh persetujuan; dengan harga kustom bisa dipilih jadi default edit
+  await put({ kieEditModel: 'vendor/edit-x', kieApprovalThresholdCredits: 20, kieDailyCredits: 0, dailyBudgetIdr: 1000000, defaultModel: 'gpt-image-2', fallbackModels: [], kieEnabled: true });
+  assert.equal((await (await fetch(appBase + '/api/estimate?provider=kie&kind=edit', { headers: H })).json()).needsApproval, true);
+  await put({ kieModelCredits: { 'vendor/edit-x': 3 } });
+
+  failNext = true;
+  kieCalls = [];
+  const e = await post('/api/edit', { prompt: 'ganti', imageBase64: PNG.toString('base64'), brand: 'Teman Seller', model: 'gpt-image-2' });
+  const eb = await e.json();
+  assert.equal(e.status, 200, JSON.stringify(eb));
+  assert.equal(eb.modelUsed, 'vendor/edit-x');
+  assert.equal(eb.credits, 4);
+  // skema dari dokumentasi: kolom gambar 'image_url' (bukan larik), tanpa output_format, tanpa aspect_ratio karena tak ada size
+  assert.deepEqual(kieCalls.find((x) => x.path === '/api/v1/jobs/createTask').body, { model: 'vendor/edit-x', input: { prompt: 'ganti', image_url: `${kieBase}/files/hasil.png` } });
+
+  // generate dengan model dari daftar: ikut skema (nano-banana punya output_format + aspect_ratio)
+  await put({ kieDefaultModel: 'google/nano-banana' });
+  failModels = new Set(['gpt-image-2']);
+  kieCalls = [];
+  assert.equal((await post('/api/generate', { prompt: 'uji skema', useStyle: false, brand: 'Teman Seller', size: '1024x1024' })).status, 200);
+  assert.deepEqual(kieCalls.find((x) => x.path === '/api/v1/jobs/createTask').body.input, { prompt: 'uji skema', aspect_ratio: '1:1', output_format: 'png' });
+  failModels = new Set();
+
+  // MCP: Claude bisa mengambil ulang daftar
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 't', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(appBase + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer rahasia' } } }));
+  assert.match((await client.callTool({ name: 'sync_kie_models', arguments: {} })).content[0].text, /Terbaca 2 model/);
+  assert.match((await client.callTool({ name: 'list_kie_models', arguments: {} })).content[0].text, /vendor\/edit-x \| Vendor - Edit X \(Vendor\) \| edit \| 3 kredit/);
+  await client.close();
+  await put({ kieEditModel: 'google/nano-banana-edit', kieModelCredits: {} });
   secrets.clearKieKey();
 });

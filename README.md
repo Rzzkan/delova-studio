@@ -118,3 +118,7 @@ Jika kenari tidak jalan (gangguan, key bermasalah, semua model cadangan gagal), 
 - Cadangan otomatis tidak jalan bila butuh persetujuan; Owner menyetujui dengan `provider="kie"` + `approved=true`.
 - MCP untuk Claude: `kie_status`, `list_kie_models`, parameter `provider` (`auto`|`kie`|`kenari`) di `generate_image`/`edit_image`/`estimate_cost`.
 - Edit gambar via kie: sumber diunggah dulu ke penyimpanan sementara kie (24 jam); mask tidak didukung.
+
+### Memilih model kie.ai
+
+kie.ai tidak punya API daftar model, jadi daftar diambil dari dokumentasi resminya: klik **Ambil daftar model dari kie.ai** di Konfigurasi (atau tool MCP `sync_kie_models`). Hasilnya (±60 model: Nano Banana, Seedream, Flux, GPT Image, Qwen, dll.) tersimpan di `data/kie-models.json`, lengkap dengan nama kolom input tiap model. Pilih model default teks→gambar dan edit dari daftar itu. Dokumentasi tidak memuat harga, jadi isi harga kredit model yang dipilih (klik modelnya di daftar); model tanpa harga selalu butuh persetujuan Owner.

@@ -262,18 +262,27 @@ async function loadKieConfig() {
   const [{ settings: s }, list] = await Promise.all([api('/settings'), api('/kie/models')]);
   kieCustom = s.kieModelCredits || {};
   $('#kie-enabled').checked = s.kieEnabled;
-  for (const [sel, cur] of [['#kie-model', s.kieDefaultModel], ['#kie-edit-model', s.kieEditModel]]) {
-    $(sel).replaceChildren(...list.map((m) => Object.assign(document.createElement('option'), { value: m.id, textContent: `${m.name} · ${kieCred(m.credits)}${m.priceIdr === null ? '' : ` (~${rp(m.priceIdr)})`}` })));
+  kieList = list;
+  for (const [sel, cur, kind] of [['#kie-model', s.kieDefaultModel, 'generate'], ['#kie-edit-model', s.kieEditModel, 'edit']]) {
+    $(sel).replaceChildren(...list.filter((m) => m.kind === kind || m.id === cur).map((m) => Object.assign(document.createElement('option'), { value: m.id, textContent: `${m.group ? `[${m.group}] ` : ''}${m.name} · ${m.credits === null ? 'harga ?' : kieCred(m.credits) + ` (~${rp(m.priceIdr)})`}` })));
     $(sel).value = cur;
   }
-  $('#kie-models').replaceChildren(...list.map((m) => {
+  renderKieModels();
+  api('/kie/status').then((st) => { $('#kie-sync-info').textContent = st.modelsFetchedAt ? `Daftar model diambil ${WIB(st.modelsFetchedAt)}: ${list.filter((m) => m.synced).length} model.` : 'Daftar model belum diambil dari kie.ai (tombol di atas). Sekarang hanya katalog bawaan.'; }).catch(() => {});
+  api('/kie/test', { method: 'POST', body: '{}' }).then(showKieCheck).catch((e) => showKieCheck({ state: 'error', message: e.message }));
+}
+let kieList = [];
+function renderKieModels() {
+  const q = $('#kie-filter').value.trim().toLowerCase();
+  $('#kie-models').replaceChildren(...kieList.filter((m) => !q || `${m.id} ${m.name} ${m.group || ''}`.toLowerCase().includes(q)).map((m) => {
     const d = document.createElement('div'); d.className = 'flex items-center justify-between gap-2';
-    const t = document.createElement('span'); t.textContent = `${m.id} · ${kieCred(m.credits)}${m.custom ? ' (kustom)' : ''}`;
+    const t = document.createElement('span'); t.className = 'cursor-pointer'; t.title = 'Klik untuk mengisi form harga';
+    t.textContent = `${m.id} · ${m.kind === 'edit' ? 'edit' : 'teks'} · ${m.credits === null ? 'harga ?' : kieCred(m.credits)}${m.custom ? ' (kustom)' : ''}`;
+    t.onclick = () => { $('#kie-custom-id').value = m.id; $('#kie-custom-credits').value = m.credits ?? ''; $('#kie-custom-credits').focus(); };
     d.append(t);
     if (m.custom) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-ghost'; b.textContent = '✕'; b.onclick = () => { const n = { ...kieCustom }; delete n[m.id]; saveKieCustom(n, $('#kie-settings-msg')); }; d.append(b); }
     return d;
   }));
-  api('/kie/test', { method: 'POST', body: '{}' }).then(showKieCheck).catch((e) => showKieCheck({ state: 'error', message: e.message }));
 }
 async function loadKieBudget() {
   const [{ settings: s }, st] = await Promise.all([api('/settings'), api('/kie/status').catch(() => null)]);
@@ -293,6 +302,12 @@ async function loadKieBudget() {
   $('#kb-balance').textContent = !cfg.hasKieKey ? 'API key kie.ai belum diisi (menu Konfigurasi).' : bal?.state === 'valid' ? `Saldo kie.ai: ${bal.credits} kredit (~US$${bal.estimatedUsd} ≈ ${rp(bal.credits * s.kieCreditIdr)}). Cadangan ${st.enabled ? 'AKTIF' : 'nonaktif'}.` : `Saldo belum terbaca: ${bal?.message || '-'}`;
 }
 function initKie() {
+  $('#kie-filter').oninput = renderKieModels;
+  $('#kie-sync').onclick = async () => {
+    const info = $('#kie-sync-info'); info.className = 'mt-2 text-xs'; info.textContent = 'Mengambil daftar dari docs.kie.ai… (sekitar 20 detik)';
+    try { const r = await api('/kie/models/sync', { method: 'POST', body: '{}' }); await loadKieConfig(); info.className = 'mt-2 text-xs text-success'; info.textContent = `Berhasil: ${r.count} model terbaca. Harga kredit model baru perlu diisi (klik modelnya di daftar).`; }
+    catch (e) { info.className = 'mt-2 text-xs text-danger'; info.textContent = e.message; }
+  };
   $('#kie-test').onclick = async () => {
     $('#kie-bal').className = 'mt-3 text-xs'; $('#kie-bal').textContent = 'Mengecek…';
     try { showKieCheck(await api('/kie/test', { method: 'POST', body: '{}' })); } catch (e) { showKieCheck({ state: 'error', message: e.message }); }

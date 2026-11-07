@@ -15,6 +15,7 @@ export const config = {
   // kie.ai = penyedia CADANGAN: dipakai otomatis bila kenari gagal. Kredit kie dikontrol terpisah (lihat settings).
   kieBaseUrl: (process.env.KIE_BASE_URL || 'https://api.kie.ai').replace(/\/$/, ''),
   kieUploadUrl: (process.env.KIE_UPLOAD_URL || 'https://kieai.redpandaai.co').replace(/\/$/, ''),
+  kieDocsUrl: (process.env.KIE_DOCS_URL || 'https://docs.kie.ai').replace(/\/$/, ''),
   kieApiKey: process.env.KIE_API_KEY || '',
   kieEnabled: !['0', 'false', 'off'].includes(String(process.env.KIE_ENABLED || '1').toLowerCase()),
   kieDefaultModel: process.env.KIE_DEFAULT_MODEL || 'google/nano-banana',

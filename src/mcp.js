@@ -94,7 +94,16 @@ export function buildMcpServer() {
     { description: 'Daftar model kie.ai (cadangan) beserta harga kredit per gambar dan estimasi rupiahnya. Model default ditandai.', inputSchema: {} },
     wrap(async () => {
       const list = await service.kieModels();
-      return { content: [text(list.map((m) => `${m.id} | ${m.name} | ${m.kind} | ${m.credits === null ? 'harga ?' : m.credits + ' kredit (~Rp' + m.priceIdr + ')'}${m.isDefault ? ' | DEFAULT generate' : ''}${m.isEditDefault ? ' | DEFAULT edit' : ''}`).join('\n'))] };
+      return { content: [text(list.map((m) => `${m.id} | ${m.name}${m.group ? ' (' + m.group + ')' : ''} | ${m.kind} | ${m.credits === null ? 'harga ?' : m.credits + ' kredit (~Rp' + m.priceIdr + ')'}${m.isDefault ? ' | DEFAULT generate' : ''}${m.isEditDefault ? ' | DEFAULT edit' : ''}`).join('\n'))] };
+    }),
+  );
+
+  server.registerTool(
+    'sync_kie_models',
+    { description: 'Ambil ulang daftar model gambar kie.ai dari dokumentasi resminya (kie.ai tidak punya API daftar model). Tidak memakai kredit. Harga kredit model baru harus diisi di Dashboard (model tanpa harga selalu butuh persetujuan Owner).', inputSchema: {} },
+    wrap(async () => {
+      const d = await kie.syncModels();
+      return { content: [text(`Terbaca ${d.models.length} model kie.ai (${d.fetchedAt}). Pakai list_kie_models untuk melihatnya.`)] };
     }),
   );
 

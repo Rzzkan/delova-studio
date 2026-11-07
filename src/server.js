@@ -198,9 +198,12 @@ export function createApp() {
         enabled: st.kieEnabled, ready: await service.kieReady(), key: secrets.kieKeyInfo(), balance: check,
         usage: { todayCredits: u.kieToday, weekCredits: u.kieWeek, monthCredits: u.kieMonth },
         limits: { dailyCredits: st.kieDailyCredits, weeklyCredits: st.kieWeeklyCredits, monthlyCredits: st.kieMonthlyCredits, approvalThresholdCredits: st.kieApprovalThresholdCredits, minBalanceCredits: st.kieMinBalance },
-        creditIdr: st.kieCreditIdr, defaultModel: st.kieDefaultModel, editModel: st.kieEditModel,
+        modelsFetchedAt: kie.syncedModels().fetchedAt, creditIdr: st.kieCreditIdr, defaultModel: st.kieDefaultModel, editModel: st.kieEditModel,
       });
     } catch (e) { next(e); }
+  });
+  api.post('/kie/models/sync', async (_req, res, next) => {
+    try { const d = await kie.syncModels(); res.json({ fetchedAt: d.fetchedAt, count: d.models.length, models: await service.kieModels() }); } catch (e) { next(e); }
   });
   api.get('/kie/models', async (_req, res, next) => { try { res.json(await service.kieModels()); } catch (e) { next(e); } });
   api.post('/generate', async (req, res, next) => {

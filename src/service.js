@@ -111,11 +111,12 @@ export function kiePrice(st, model) {
 /** Daftar model kie: katalog bawaan + model kustom, dengan harga kredit yang berlaku. */
 export async function kieModels() {
   const st = await settings.get();
-  const ids = new Set([...kie.CATALOG.map((m) => m.id), ...Object.keys(st.kieModelCredits || {}), st.kieDefaultModel, st.kieEditModel]);
+  const synced = kie.syncedModels().models;
+  const ids = new Set([...kie.CATALOG.map((m) => m.id), ...synced.map((m) => m.id), ...Object.keys(st.kieModelCredits || {}), st.kieDefaultModel, st.kieEditModel]);
   return [...ids].map((id) => {
-    const base = kie.CATALOG.find((m) => m.id === id);
+    const base = kie.CATALOG.find((m) => m.id === id) || synced.find((m) => m.id === id);
     const credits = kiePrice(st, id);
-    return { id, name: base?.name || id, kind: base?.kind || (/edit/i.test(id) ? 'edit' : 'generate'), credits, priceIdr: credits === null ? null : Math.round(credits * st.kieCreditIdr), custom: typeof st.kieModelCredits?.[id] === 'number', isDefault: id === st.kieDefaultModel, isEditDefault: id === st.kieEditModel };
+    return { id, name: base?.name || id, group: synced.find((m) => m.id === id)?.group || null, synced: synced.some((m) => m.id === id), kind: base?.kind || (/edit/i.test(id) ? 'edit' : 'generate'), credits, priceIdr: credits === null ? null : Math.round(credits * st.kieCreditIdr), custom: typeof st.kieModelCredits?.[id] === 'number', isDefault: id === st.kieDefaultModel, isEditDefault: id === st.kieEditModel };
   });
 }
 
@@ -301,7 +302,7 @@ export async function editImages({ prompt, sources, mask, model, n = 1, size, qu
   const r = await withFallback({
     kind: 'edit', source, provider, model: model || w.model || undefined, fallbackModels: w.fallbackModels, n, approved,
     call: (m, est) => kenari.edit({ model: m, prompt: w.prompt, images: sources, mask, n: est.n, size, quality }),
-    kieCall: (m, est) => kie.edit({ model: m, prompt: w.prompt, images: sources, n: est.n, perImageCredits: est.creditsPerImage }), // mask tidak didukung kie
+    kieCall: (m, est) => kie.edit({ model: m, prompt: w.prompt, images: sources, n: est.n, size, perImageCredits: est.creditsPerImage }), // mask tidak didukung kie
   });
   return finish(r, { kind: 'edit', prompt, finalPrompt: w.prompt, title, role, size, source, style: w.used.join(' + ') || null, brand: w.brand.slug, brandName: w.brand.name });
 }
