@@ -50,7 +50,7 @@ async function writeIndex(entries) {
  */
 async function ensureLedger() {
   if (existsSync(ledgerFile())) return;
-  const rows = (await readIndex()).filter((e) => e.costIdr > 0).map((e) => ({ at: e.createdAt, date: e.date, costIdr: e.costIdr, model: e.model, batch: e.batch }));
+  const rows = (await readIndex()).filter((e) => e.costIdr > 0).map((e) => ({ at: e.createdAt, date: e.date, costIdr: e.costIdr, model: e.model, batch: e.batch, provider: e.provider, credits: e.credits }));
   await writeFile(ledgerFile(), rows.map((r) => JSON.stringify(r) + '\n').join(''));
 }
 async function readLedger() {
@@ -66,7 +66,11 @@ export async function usage() {
   const rows = await readLedger();
   const today = wibDate(), ws = weekStartOf(today), ms = today.slice(0, 8) + '01';
   const sum = (f) => rows.filter(f).reduce((a, r) => a + (r.costIdr || 0), 0);
-  return { today: sum((r) => r.date === today), week: sum((r) => r.date >= ws), month: sum((r) => r.date >= ms), weekStart: ws, monthStart: ms };
+  const kie = (f) => rows.filter((r) => r.provider === 'kie' && f(r)).reduce((a, r) => a + (r.credits || 0), 0); // kredit kie dihitung terpisah; rupiahnya ikut total di atas
+  return {
+    today: sum((r) => r.date === today), week: sum((r) => r.date >= ws), month: sum((r) => r.date >= ms), weekStart: ws, monthStart: ms,
+    kieToday: kie((r) => r.date === today), kieWeek: kie((r) => r.date >= ws), kieMonth: kie((r) => r.date >= ms),
+  };
 }
 
 export async function init() {
@@ -109,13 +113,15 @@ export function saveBatch({ images, meta }) {
         brandName: meta.brandName || null,
         // biaya dibagi rata per gambar; biaya batch dicatat di gambar pertama agar total tetap akurat
         costIdr: i === 0 ? meta.costIdr : 0,
+        provider: meta.provider || 'kenari',
+        credits: i === 0 && meta.credits ? meta.credits : undefined,
         batch: `${prefix}_v${version}`,
       };
       entries.push(entry);
       saved.push(entry);
     }
     await writeIndex(entries);
-    if (meta.costIdr > 0) await appendFile(ledgerFile(), JSON.stringify({ at: new Date().toISOString(), date, costIdr: meta.costIdr, model: meta.model, batch: `${prefix}_v${version}` }) + '\n');
+    if (meta.costIdr > 0) await appendFile(ledgerFile(), JSON.stringify({ at: new Date().toISOString(), date, costIdr: meta.costIdr, model: meta.model, batch: `${prefix}_v${version}`, ...(meta.provider === 'kie' ? { provider: 'kie', credits: meta.credits || 0 } : {}) }) + '\n');
     return saved;
   });
 }

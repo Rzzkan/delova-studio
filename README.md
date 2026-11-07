@@ -107,3 +107,14 @@ docs/SPEC.md    spesifikasi
 1. OAuth untuk connector Claude.ai.
 2. Template prompt per format (feed 4:5, story, carousel, thumbnail) dari Library Prompt Kenzo.
 3. Mask editor di tab Edit.
+
+## Cadangan kie.ai
+
+Jika kenari tidak jalan (gangguan, key bermasalah, semua model cadangan gagal), server otomatis membuat gambar lewat **kie.ai**.
+
+- Isi API key kie.ai di **Konfigurasi** (atau `KIE_API_KEY`), pilih model default teks→gambar dan edit, lalu aktifkan cadangan.
+- Harga dalam **kredit** (1 kredit ≈ US$0,005 ≈ Rp80; nilai rupiah bisa diubah). Katalog bawaan hanya model terverifikasi; model lain ditambah dengan ID + harga kredit.
+- Kontrol kredit di **Batas Biaya**: batas harian/mingguan/bulanan (kredit), ambang persetujuan Owner, saldo minimum. Rupiah setara kredit ikut budget rupiah gabungan.
+- Cadangan otomatis tidak jalan bila butuh persetujuan; Owner menyetujui dengan `provider="kie"` + `approved=true`.
+- MCP untuk Claude: `kie_status`, `list_kie_models`, parameter `provider` (`auto`|`kie`|`kenari`) di `generate_image`/`edit_image`/`estimate_cost`.
+- Edit gambar via kie: sumber diunggah dulu ke penyimpanan sementara kie (24 jam); mask tidak didukung.

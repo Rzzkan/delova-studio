@@ -139,6 +139,7 @@ async function loadBudget() {
     const b = d.querySelector('.bg-primary'); b.style.width = `${pct}%`; if (pct >= 90) b.className = 'h-2 rounded-full bg-danger'; else if (pct >= 70) b.className = 'h-2 rounded-full bg-warning';
     return d;
   }));
+  loadKieBudget().catch(() => {});
   $('#budget-key').textContent = cfg.hasApiKey ? `API key kenari: terisi (${cfg.apiKeyMasked}).` : 'API key kenari belum diisi. Isi di menu Konfigurasi.';
 }
 
@@ -194,10 +195,12 @@ async function loadConfig(refresh = false) {
   renderModels();
   fb = (await api('/settings')).settings.fallbackModels || [];
   renderFallback();
+  loadKieConfig().catch(() => {});
   loadLogs();
 }
 function initConfig() {
   initFallback();
+  initKie();
   $('#m-filter').oninput = renderModels;
   $('#m-refresh').onclick = async () => { $('#m-msg').className = PLAIN; $('#m-msg').textContent = 'Memuat…'; await loadConfig(true); fillModelSelects(); $('#m-msg').textContent = ''; };
   $('#m-save').onclick = async () => {
@@ -232,6 +235,108 @@ function initConfig() {
   };
 }
 
+/* ---------- kie.ai (cadangan) ---------- */
+const kieCred = (n) => (n === null || n === undefined ? '?' : `${Math.round(n * 10) / 10} kredit`);
+let kieCustom = {};
+function showKieInfo(i) {
+  const has = i.hasKey ?? i.hasKieKey;
+  $('#kie-masked').textContent = has ? (i.masked || i.kieKeyMasked) : 'Belum ada key';
+  const src = i.source || i.kieKeySource;
+  $('#kie-source').textContent = KEY_SRC[src] || src;
+  $('#kie-source').className = `rounded-full px-3 py-1 text-xs font-medium ${src === 'none' ? 'bg-danger text-white' : 'bg-graylight dark:bg-bodydark'}`;
+  $('#kie-clear').classList.toggle('hidden', src !== 'dashboard');
+}
+function showKieCheck(c) {
+  const el = $('#kie-bal');
+  if (c.state === 'valid') { el.className = 'mt-3 text-xs text-success'; el.textContent = `Terhubung. Saldo ${c.credits} kredit (~US$${c.estimatedUsd} ≈ ${rp(c.credits * (cfg.kieCreditIdr || 80))}).`; }
+  else if (c.state === 'none') { el.className = 'mt-3 text-xs'; el.textContent = c.message; }
+  else { el.className = 'mt-3 text-xs text-danger'; el.textContent = c.message; }
+}
+async function saveKieCustom(next, msg) {
+  try { await api('/settings', { method: 'PUT', body: JSON.stringify({ kieModelCredits: next }) }); await loadKieConfig(); msg.className = OK; msg.textContent = 'Harga model tersimpan.'; }
+  catch (e) { msg.className = ERR; msg.textContent = e.message; }
+}
+async function loadKieConfig() {
+  await refreshConfig();
+  showKieInfo(cfg);
+  const [{ settings: s }, list] = await Promise.all([api('/settings'), api('/kie/models')]);
+  kieCustom = s.kieModelCredits || {};
+  $('#kie-enabled').checked = s.kieEnabled;
+  for (const [sel, cur] of [['#kie-model', s.kieDefaultModel], ['#kie-edit-model', s.kieEditModel]]) {
+    $(sel).replaceChildren(...list.map((m) => Object.assign(document.createElement('option'), { value: m.id, textContent: `${m.name} · ${kieCred(m.credits)}${m.priceIdr === null ? '' : ` (~${rp(m.priceIdr)})`}` })));
+    $(sel).value = cur;
+  }
+  $('#kie-models').replaceChildren(...list.map((m) => {
+    const d = document.createElement('div'); d.className = 'flex items-center justify-between gap-2';
+    const t = document.createElement('span'); t.textContent = `${m.id} · ${kieCred(m.credits)}${m.custom ? ' (kustom)' : ''}`;
+    d.append(t);
+    if (m.custom) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-ghost'; b.textContent = '✕'; b.onclick = () => { const n = { ...kieCustom }; delete n[m.id]; saveKieCustom(n, $('#kie-settings-msg')); }; d.append(b); }
+    return d;
+  }));
+  api('/kie/test', { method: 'POST', body: '{}' }).then(showKieCheck).catch((e) => showKieCheck({ state: 'error', message: e.message }));
+}
+async function loadKieBudget() {
+  const [{ settings: s }, st] = await Promise.all([api('/settings'), api('/kie/status').catch(() => null)]);
+  $('#kb-daily').value = s.kieDailyCredits; $('#kb-weekly').value = s.kieWeeklyCredits; $('#kb-monthly').value = s.kieMonthlyCredits;
+  $('#kb-approval').value = s.kieApprovalThresholdCredits; $('#kb-min').value = s.kieMinBalance; $('#kb-rate').value = s.kieCreditIdr;
+  const rows = [['Hari ini', cfg.spentKieTodayCredits, s.kieDailyCredits], ['Minggu ini', cfg.spentKieWeekCredits, s.kieWeeklyCredits], ['Bulan ini', cfg.spentKieMonthCredits, s.kieMonthlyCredits]];
+  $('#kie-usage').replaceChildren(...rows.map(([label, spent, limit]) => {
+    const d = document.createElement('div');
+    const pct = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0;
+    d.innerHTML = '<div class="flex justify-between"><span></span><span class="font-medium text-bodydark dark:text-white"></span></div><div class="mt-2 h-2 overflow-hidden rounded-full bg-graylight dark:bg-bodydark"><div class="h-2 rounded-full bg-primary"></div></div>';
+    d.querySelector('span').textContent = label;
+    d.querySelectorAll('span')[1].textContent = `${Math.round(spent * 10) / 10} kredit (≈ ${rp(spent * s.kieCreditIdr)}) / ${limit > 0 ? limit + ' kredit (≈ ' + rp(limit * s.kieCreditIdr) + ')' : 'tanpa batas'}`;
+    const b = d.querySelector('.bg-primary'); b.style.width = `${pct}%`; if (pct >= 90) b.className = 'h-2 rounded-full bg-danger'; else if (pct >= 70) b.className = 'h-2 rounded-full bg-warning';
+    return d;
+  }));
+  const bal = st?.balance;
+  $('#kb-balance').textContent = !cfg.hasKieKey ? 'API key kie.ai belum diisi (menu Konfigurasi).' : bal?.state === 'valid' ? `Saldo kie.ai: ${bal.credits} kredit (~US$${bal.estimatedUsd} ≈ ${rp(bal.credits * s.kieCreditIdr)}). Cadangan ${st.enabled ? 'AKTIF' : 'nonaktif'}.` : `Saldo belum terbaca: ${bal?.message || '-'}`;
+}
+function initKie() {
+  $('#kie-test').onclick = async () => {
+    $('#kie-bal').className = 'mt-3 text-xs'; $('#kie-bal').textContent = 'Mengecek…';
+    try { showKieCheck(await api('/kie/test', { method: 'POST', body: '{}' })); } catch (e) { showKieCheck({ state: 'error', message: e.message }); }
+  };
+  $('#kie-save').onclick = async () => {
+    const msg = $('#kie-msg'), key = $('#kie-input').value.trim();
+    if (!key) { msg.className = ERR; msg.textContent = 'Tempel API key dulu.'; return; }
+    msg.className = PLAIN; msg.textContent = 'Memeriksa key ke kie.ai…';
+    try {
+      const r = await api('/kie/key', { method: 'PUT', body: JSON.stringify({ apiKey: key }) });
+      $('#kie-input').value = '';
+      await refreshConfig(); showKieInfo(r); showKieCheck(r.check);
+      msg.className = r.verified ? OK : PLAIN; msg.textContent = r.verified ? 'Key tersimpan dan sudah dipakai.' : `Key tersimpan, tetapi belum bisa diverifikasi: ${r.check.message}`;
+    } catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
+  $('#kie-clear').onclick = async () => {
+    if (!confirm('Hapus key kie.ai yang diisi dari dashboard? Server akan memakai KIE_API_KEY di .env (jika ada).')) return;
+    const msg = $('#kie-msg');
+    try { const r = await api('/kie/key', { method: 'DELETE' }); await refreshConfig(); showKieInfo(r); $('#kie-bal').textContent = ''; msg.className = OK; msg.textContent = 'Key dashboard dihapus.'; }
+    catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
+  $('#kie-settings-save').onclick = async () => {
+    const msg = $('#kie-settings-msg');
+    try {
+      await api('/settings', { method: 'PUT', body: JSON.stringify({ kieEnabled: $('#kie-enabled').checked, kieDefaultModel: $('#kie-model').value, kieEditModel: $('#kie-edit-model').value }) });
+      msg.className = OK; msg.textContent = $('#kie-enabled').checked ? 'Tersimpan. Cadangan kie.ai aktif.' : 'Tersimpan. Cadangan kie.ai nonaktif.';
+    } catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
+  $('#kie-custom-add').onclick = () => {
+    const id = $('#kie-custom-id').value.trim(), credits = Number($('#kie-custom-credits').value);
+    const msg = $('#kie-settings-msg');
+    if (!id || !Number.isFinite(credits) || credits < 0) { msg.className = ERR; msg.textContent = 'Isi ID model dan harga kredit.'; return; }
+    saveKieCustom({ ...kieCustom, [id]: credits }, msg).then(() => { $('#kie-custom-id').value = ''; $('#kie-custom-credits').value = ''; });
+  };
+  $('#kie-budget-form').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const msg = $('#kb-msg');
+    try {
+      await api('/settings', { method: 'PUT', body: JSON.stringify({ kieDailyCredits: Number($('#kb-daily').value), kieWeeklyCredits: Number($('#kb-weekly').value), kieMonthlyCredits: Number($('#kb-monthly').value), kieApprovalThresholdCredits: Number($('#kb-approval').value), kieMinBalance: Number($('#kb-min').value), kieCreditIdr: Number($('#kb-rate').value) }) });
+      msg.className = OK; msg.textContent = 'Kontrol kredit tersimpan dan langsung berlaku.'; await refreshConfig(); await loadKieBudget();
+    } catch (e) { msg.className = ERR; msg.textContent = e.message; }
+  };
+}
+
 /* ---------- model cadangan + log ---------- */
 let fb = [];
 function renderFallback() {
@@ -260,10 +365,10 @@ async function loadLogs() {
     const top = document.createElement('div'); top.className = 'flex flex-wrap items-center gap-x-2';
     top.innerHTML = '<b class="status"></b><span class="model font-medium text-bodydark dark:text-white"></span><span class="meta ml-auto"></span>';
     const st = top.querySelector('.status'); st.textContent = label; st.className = `status ${cls}`;
-    top.querySelector('.model').textContent = r.model;
+    top.querySelector('.model').textContent = `${r.provider === 'kie' ? 'kie.ai · ' : ''}${r.model}`;
     top.querySelector('.meta').textContent = `${WIB(r.at)} · ${r.kind} · ${r.source}${r.ms ? ` · ${(r.ms / 1000).toFixed(1)}s` : ''}`;
     d.append(top);
-    const note = [r.fallbackFrom ? `cadangan dari ${r.fallbackFrom}` : '', r.message || ''].filter(Boolean).join(' · ');
+    const note = [r.fallbackFrom ? `cadangan dari ${r.fallbackFrom}` : '', r.credits ? `${r.credits} kredit` : '', r.message || ''].filter(Boolean).join(' · ');
     if (note) { const n = document.createElement('div'); n.className = 'mt-1 break-words'; n.textContent = note; d.append(n); }
     return d;
   }));
@@ -461,7 +566,7 @@ async function run(prefix, path, payload, outId) {
   btn.disabled = true; msg.className = PLAIN; msg.textContent = 'Memproses… bisa sampai beberapa menit.';
   try {
     const r = await api(path, { method: 'POST', body: JSON.stringify(payload) });
-    msg.className = OK; msg.textContent = `Selesai. ${r.images.length} gambar, biaya ${rp(r.costIdr)}. Tersimpan di Galeri.` + (r.fallbackFrom ? ` Model utama ${r.fallbackFrom} gagal, dipakai cadangan ${r.modelUsed}.` : '');
+    msg.className = OK; msg.textContent = `Selesai. ${r.images.length} gambar, biaya ${rp(r.costIdr)}. Tersimpan di Galeri.` + (r.providerUsed === 'kie' ? ` Kenari gagal, dibuat lewat kie.ai (${r.credits} kredit ≈ ${rp(r.costIdr)}).` : r.fallbackFrom ? ` Model utama ${r.fallbackFrom} gagal, dipakai cadangan ${r.modelUsed}.` : '');
     $(outId).replaceChildren(...r.images.map(tile));
     if ($('#g-empty')) $('#g-empty').hidden = true;
   } catch (e) { msg.className = ERR; msg.textContent = e.message; }
@@ -544,7 +649,7 @@ async function init() {
   };
   $('#budget-reset').onclick = async () => {
     const { defaults } = await api('/settings');
-    const { defaultModel, fallbackModels, ...budgetOnly } = defaults; // model default diatur di menu Konfigurasi
+    const { defaultModel, fallbackModels, kieEnabled, kieDefaultModel, kieEditModel, kieModelCredits, ...budgetOnly } = defaults; // model default diatur di menu Konfigurasi
     await api('/settings', { method: 'PUT', body: JSON.stringify(budgetOnly) });
     $('#budget-msg').className = OK; $('#budget-msg').textContent = 'Dikembalikan ke nilai awal dari .env.'; await loadBudget();
   };

@@ -17,6 +17,7 @@ function write(obj) {
   renameSync(file() + '.tmp', file());
 }
 
+export const KIE_KEY_RE = /^[A-Za-z0-9_-]{16,200}$/;
 export const mask = (k) => (k ? `${k.slice(0, 3)}••••${k.slice(-4)}` : '');
 
 // Key dari dashboard menang atas KENARI_API_KEY di .env.
@@ -41,5 +42,27 @@ export function setApiKey(key) {
 
 export function clearApiKey() {
   const { kenariApiKey, ...rest } = read(); // eslint-disable-line no-unused-vars
+  write(rest);
+}
+
+// ---- kie.ai (penyedia cadangan) ----
+export function getKieKey() {
+  return read().kieApiKey || config.kieApiKey;
+}
+export function kieKeyInfo() {
+  const saved = read().kieApiKey;
+  const key = saved || config.kieApiKey;
+  return { hasKey: Boolean(key), source: saved ? 'dashboard' : key ? 'env' : 'none', masked: mask(key) };
+}
+export function setKieKey(key) {
+  if (!KIE_KEY_RE.test(key || '')) {
+    const err = new Error('Format API key kie.ai tidak valid (16-200 karakter huruf/angka, tanpa spasi).');
+    err.status = 400;
+    throw err;
+  }
+  write({ ...read(), kieApiKey: key, updatedAt: new Date().toISOString() });
+}
+export function clearKieKey() {
+  const { kieApiKey, ...rest } = read(); // eslint-disable-line no-unused-vars
   write(rest);
 }

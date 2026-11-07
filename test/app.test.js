@@ -8,6 +8,8 @@ import { join } from 'node:path';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const models = JSON.parse(readFileSync(new URL('./fixtures/models.json', import.meta.url), 'utf8'));
 let mock, base, app, appBase, calls = [], failNext = false, failModels = new Set();
+let kieMock, kieBase, kieCalls = [], kieFail = null, kieBalance = 1000, kiePolls = new Map();
+const KIE_CREDITS_PER_TASK = 4;
 
 before(async () => {
   mock = http.createServer((req, res) => {
@@ -31,6 +33,41 @@ before(async () => {
   });
   await new Promise((r) => mock.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${mock.address().port}/v1`;
+  // Tiruan kie.ai: createTask -> recordInfo (generating lalu success) -> unduh file; kredit; unggah base64. Galat datang sebagai HTTP 200 + code.
+  kieMock = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      const u = new URL(req.url, 'http://x');
+      const body = Buffer.concat(chunks).toString();
+      const auth = req.headers.authorization || '';
+      const json = (o) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(o)); };
+      if (u.pathname === '/files/hasil.png') { res.setHeader('Content-Type', 'image/png'); return res.end(PNG); }
+      if (auth.endsWith('kie-kunci-salah-0123456789')) return json({ code: 401, msg: 'You do not have access permissions' });
+      if (u.pathname === '/api/v1/chat/credit') return json({ code: 200, msg: 'success', data: kieBalance });
+      if (u.pathname === '/api/file-base64-upload') { kieCalls.push({ path: u.pathname, body: JSON.parse(body) }); return json({ success: true, code: 200, data: { downloadUrl: `${kieBase}/files/hasil.png` } }); }
+      if (u.pathname === '/api/v1/jobs/createTask') {
+        kieCalls.push({ path: u.pathname, auth, body: JSON.parse(body) });
+        if (kieFail) return json(kieFail);
+        const id = `task${kieCalls.length}`;
+        kiePolls.set(id, 0);
+        return json({ code: 200, msg: 'success', data: { taskId: id } });
+      }
+      if (u.pathname === '/api/v1/jobs/recordInfo') {
+        const id = u.searchParams.get('taskId');
+        const n = (kiePolls.get(id) || 0) + 1;
+        kiePolls.set(id, n);
+        if (n < 2) return json({ code: 200, msg: 'success', data: { taskId: id, state: 'generating' } });
+        return json({ code: 200, msg: 'success', data: { taskId: id, state: 'success', resultJson: JSON.stringify({ resultUrls: [`${kieBase}/files/hasil.png`] }), creditsConsumed: KIE_CREDITS_PER_TASK } });
+      }
+      res.statusCode = 404; json({ code: 404, msg: 'not found' });
+    });
+  });
+  await new Promise((r) => kieMock.listen(0, '127.0.0.1', r));
+  kieBase = `http://127.0.0.1:${kieMock.address().port}`;
+  process.env.KIE_BASE_URL = kieBase;
+  process.env.KIE_UPLOAD_URL = kieBase;
+  process.env.KIE_POLL_MS = '10';
   process.env.KENARI_BASE_URL = base;
   process.env.KENARI_API_KEY = 'kn-test';
   process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'tss-'));
@@ -49,7 +86,7 @@ before(async () => {
   await new Promise((r) => app.once('listening', r));
   appBase = `http://127.0.0.1:${app.address().port}`;
 });
-after(() => { mock.closeAllConnections(); mock.close(); app.closeAllConnections(); app.close(); });
+after(() => { kieMock.closeAllConnections(); kieMock.close(); mock.closeAllConnections(); mock.close(); app.closeAllConnections(); app.close(); });
 
 const H = { Authorization: 'Bearer rahasia', 'Content-Type': 'application/json' };
 const post = (p, b) => fetch(appBase + p, { method: 'POST', headers: H, body: JSON.stringify(b) });
@@ -758,4 +795,182 @@ test('migrasi: database sebelum multi-brand (tanpa brand_id/model) dinaikkan, st
   const again = JSON.parse(run().stdout);
   assert.deepEqual(again.brands, [['Teman Seller', 'teman-seller', true, 2]], 'jalan kedua tidak menggandakan brand');
   assert.deepEqual(again.list.find((x) => x[0] === 'Ngopi Dulu'), ['Ngopi Dulu', 'PILAR-LAMA', false, 'm-x'], 'kolom model tersimpan');
+});
+
+test('kie.ai: cadangan otomatis saat kenari gagal, kredit dihitung & dikontrol (batas, ambang, saldo minimum), bisa dimatikan', async () => {
+  const secrets = await import('../src/secrets.js');
+  const put = (b) => fetch(appBase + '/api/settings', { method: 'PUT', headers: H, body: JSON.stringify(b) });
+  const cfgNow = async () => (await fetch(appBase + '/api/config', { headers: H })).json();
+  const logs = async () => (await fetch(appBase + '/api/logs?limit=100', { headers: H })).json();
+  const original = (await (await fetch(appBase + '/api/settings', { headers: H })).json()).settings;
+
+  // key kie: token mesin (Claude) ditolak; hanya admin web, format divalidasi, ditolak kie -> tidak disimpan, nilai tidak bocor
+  assert.equal((await call2('PUT', '/api/kie/key', { apiKey: 'kie-test-key-0123456789abcd' })).status, 403);
+  assert.equal((await call2('DELETE', '/api/kie/key')).status, 403);
+  assert.equal((await post('/api/kie/test', {})).status, 403);
+  const cookie = (await login({ user: 'bos', password: 'sandi-panjang-123' }, '10.7.7.7')).headers.get('set-cookie').split(';')[0];
+  const S = { Cookie: cookie, 'Content-Type': 'application/json' };
+  const kkey = (b) => fetch(appBase + '/api/kie/key', { method: 'PUT', headers: S, body: JSON.stringify(b) });
+  assert.equal((await kkey({ apiKey: 'pendek' })).status, 400);
+  assert.equal((await kkey({ apiKey: 'kie-kunci-salah-0123456789' })).status, 400, 'ditolak kie -> tidak disimpan');
+  assert.equal((await (await fetch(appBase + '/api/config', { headers: S })).json()).kieKeySource, 'none');
+  assert.equal((await (await fetch(appBase + '/api/kie/test', { method: 'POST', headers: S, body: '{}' })).json()).state, 'none');
+  const saved = await kkey({ apiKey: 'kie-test-key-0123456789abcd' });
+  assert.equal(saved.status, 200);
+  const sb = await saved.json();
+  assert.equal(sb.verified, true);
+  assert.ok(!JSON.stringify(sb).includes('0123456789abcd'), 'key kie tidak bocor');
+  const ok = await (await fetch(appBase + '/api/kie/test', { method: 'POST', headers: S, body: '{}' })).json();
+  assert.deepEqual([ok.state, ok.credits, ok.estimatedUsd], ['valid', 1000, 5]);
+  const c0 = await cfgNow();
+  assert.equal(c0.hasKieKey, true);
+  assert.equal(c0.kieKeySource, 'dashboard');
+  assert.match(c0.kieKeyMasked, /••••abcd$/);
+  assert.ok(!JSON.stringify(c0).includes('0123456789abcd'));
+  assert.throws(() => secrets.setKieKey('pendek'), /tidak valid/);
+
+  // pengaturan: validasi
+  assert.equal((await put({ kieDailyCredits: -1 })).status, 400);
+  assert.equal((await put({ kieCreditIdr: 0 })).status, 400);
+  assert.equal((await put({ kieDefaultModel: 'model ngawur!' })).status, 400);
+  assert.equal((await put({ kieModelCredits: { 'a/b': 'mahal' } })).status, 400);
+  assert.equal((await put({ dailyBudgetIdr: 1000000, kieDailyCredits: 0, kieWeeklyCredits: 0, kieMonthlyCredits: 0, kieApprovalThresholdCredits: 20, kieMinBalance: 0, kieCreditIdr: 80, kieEnabled: true, kieDefaultModel: 'google/nano-banana', defaultModel: 'gpt-image-2', fallbackModels: [] })).status, 200);
+  const cat = await (await fetch(appBase + '/api/kie/models', { headers: H })).json();
+  assert.ok(cat.some((m) => m.id === 'google/nano-banana' && m.credits === 4 && m.priceIdr === 320 && m.isDefault));
+
+  // kenari normal -> kie TIDAK dipakai
+  kieCalls = [];
+  let r = await post('/api/generate', { prompt: 'kenari sehat', useStyle: false, brand: 'Teman Seller' });
+  { const j = await r.json(); assert.equal(j.providerUsed, 'kenari', JSON.stringify(j)); }
+  assert.equal(kieCalls.length, 0);
+
+  // kenari gagal -> kie.ai jadi cadangan: gambar tersimpan, kredit & rupiah tercatat, provider tercatat
+  failModels = new Set(['gpt-image-2']);
+  const before = await cfgNow();
+  r = await post('/api/generate', { prompt: 'cadangan kie', useStyle: false, brand: 'Teman Seller', size: '1024x1792' });
+  assert.equal(r.status, 200);
+  let b = await r.json();
+  assert.equal(b.providerUsed, 'kie');
+  assert.equal(b.modelUsed, 'google/nano-banana');
+  assert.equal(b.fallbackFrom, 'gpt-image-2');
+  assert.equal(b.credits, 4);
+  assert.equal(b.costIdr, 320);
+  assert.equal(b.images[0].provider, 'kie');
+  assert.equal(b.images[0].credits, 4);
+  const task = kieCalls.find((x) => x.path === '/api/v1/jobs/createTask');
+  assert.equal(task.auth, 'Bearer kie-test-key-0123456789abcd');
+  assert.deepEqual(task.body, { model: 'google/nano-banana', input: { prompt: 'cadangan kie', aspect_ratio: '9:16', output_format: 'png' } });
+  const after1 = await cfgNow();
+  assert.equal(after1.spentKieTodayCredits - before.spentKieTodayCredits, 4);
+  assert.equal(after1.spentTodayIdr - before.spentTodayIdr, 320, 'rupiah kie ikut budget rupiah gabungan');
+  const l = await logs();
+  assert.ok(l.some((x) => x.provider === 'kie' && x.status === 'ok' && x.credits === 4 && x.fallbackFrom === 'gpt-image-2'));
+  assert.ok(l.some((x) => x.status === 'error' && x.model === 'gpt-image-2'));
+  assert.ok(!JSON.stringify(l).includes('cadangan kie'), 'log tidak memuat prompt');
+
+  // n gambar = n tugas; kredit dijumlahkan
+  r = await post('/api/generate', { prompt: 'dua gambar', useStyle: false, brand: 'Teman Seller', n: 2, approved: true });
+  b = await r.json();
+  assert.equal(b.images.length, 2);
+  assert.equal(b.credits, 8);
+
+  // edit: kenari gagal -> gambar sumber diunggah ke kie lalu edit-model kie dipakai
+  failNext = true;
+  kieCalls = [];
+  r = await post('/api/edit', { prompt: 'ganti latar', imageBase64: PNG.toString('base64'), brand: 'Teman Seller', model: 'gpt-image-2' });
+  b = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(b));
+  assert.equal(b.providerUsed, 'kie');
+  assert.equal(b.modelUsed, 'google/nano-banana-edit');
+  assert.ok(kieCalls.some((x) => x.path === '/api/file-base64-upload' && x.body.base64Data.startsWith('data:image/png;base64,')));
+  assert.deepEqual(kieCalls.find((x) => x.path === '/api/v1/jobs/createTask').body.input.image_urls, [`${kieBase}/files/hasil.png`]);
+
+  // kontrol kredit: ambang persetujuan -> cadangan tidak jalan diam-diam; provider=kie + approved=true menyetujui
+  await put({ kieApprovalThresholdCredits: 2 });
+  kieCalls = [];
+  r = await post('/api/generate', { prompt: 'butuh setuju', useStyle: false, brand: 'Teman Seller' });
+  assert.equal(r.status, 402);
+  assert.match((await r.json()).error, /kie\.ai.*ambang persetujuan/);
+  assert.equal(kieCalls.length, 0, 'tidak memanggil kie tanpa persetujuan');
+  r = await post('/api/generate', { prompt: 'butuh setuju', useStyle: false, brand: 'Teman Seller', provider: 'kie', approved: true });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).fallbackFrom, null, 'dipilih langsung, bukan cadangan');
+
+  // batas kredit harian menahan walau approved
+  const spent = (await cfgNow()).spentKieTodayCredits;
+  await put({ kieApprovalThresholdCredits: 1000, kieDailyCredits: spent + 3 });
+  r = await post('/api/generate', { prompt: 'lewat batas', useStyle: false, brand: 'Teman Seller' });
+  assert.equal(r.status, 402);
+  assert.match((await r.json()).error, /Batas kredit kie\.ai harian/);
+  r = await post('/api/generate', { prompt: 'lewat batas', useStyle: false, brand: 'Teman Seller', provider: 'kie', approved: true });
+  assert.equal(r.status, 402, 'approved tidak menembus batas harian');
+  await put({ kieDailyCredits: 0 });
+
+  // saldo minimum
+  kieBalance = 10;
+  await put({ kieMinBalance: 8 });
+  r = await post('/api/generate', { prompt: 'saldo tipis', useStyle: false, brand: 'Teman Seller' });
+  assert.equal(r.status, 402);
+  assert.match((await r.json()).error, /Saldo kie\.ai 10 kredit tidak cukup/);
+  await put({ kieMinBalance: 0 });
+  kieBalance = 1000;
+
+  // kie juga gagal (kredit habis; galat datang sebagai HTTP 200 + code 402) -> galat gabungan, tanpa biaya
+  kieFail = { code: 402, msg: 'Credits insufficient' };
+  const spentBefore = await cfgNow();
+  r = await post('/api/generate', { prompt: 'dua-duanya mati', useStyle: false, brand: 'Teman Seller' });
+  assert.notEqual(r.status, 200);
+  const msg = (await r.json()).error;
+  assert.match(msg, /Kenari gagal/);
+  assert.match(msg, /Kredit kie\.ai habis/);
+  assert.equal((await cfgNow()).spentKieTodayCredits, spentBefore.spentKieTodayCredits);
+  kieFail = null;
+
+  // dimatikan -> kenari gagal tetap gagal seperti semula
+  await put({ kieEnabled: false });
+  kieCalls = [];
+  r = await post('/api/generate', { prompt: 'tanpa cadangan', useStyle: false, brand: 'Teman Seller' });
+  assert.equal(r.status, 503);
+  assert.equal(kieCalls.length, 0);
+  assert.equal((await post('/api/generate', { prompt: 'paksa kie', useStyle: false, brand: 'Teman Seller', provider: 'kie' })).status, 400);
+
+  // estimasi kredit + MCP
+  await put({ kieEnabled: true });
+  const est = await (await fetch(appBase + '/api/estimate?provider=kie&n=2', { headers: H })).json();
+  assert.deepEqual([est.totalCredits, est.totalIdr, est.provider], [8, 640, 'kie']);
+  const status = await (await fetch(appBase + '/api/kie/status', { headers: H })).json();
+  assert.equal(status.balance.credits, 1000);
+  assert.equal(status.ready, true);
+
+  // model kustom tanpa harga selalu butuh persetujuan; dengan harga kustom dihitung
+  await put({ kieDefaultModel: 'vendor/model-baru' });
+  assert.equal((await (await fetch(appBase + '/api/estimate?provider=kie', { headers: H })).json()).needsApproval, true);
+  await put({ kieModelCredits: { 'vendor/model-baru': 1.5 } });
+  const e2 = await (await fetch(appBase + '/api/estimate?provider=kie', { headers: H })).json();
+  assert.deepEqual([e2.totalCredits, e2.totalIdr, e2.needsApproval], [1.5, 120, false]);
+
+  failModels = new Set();
+  assert.equal((await fetch(appBase + '/api/kie/key', { method: 'DELETE', headers: S })).status, 200);
+  assert.equal((await cfgNow()).hasKieKey, false);
+  await put(original);
+});
+
+test('kie.ai lewat MCP: kie_status dan estimate_cost provider=kie', async () => {
+  const secrets = await import('../src/secrets.js');
+  secrets.setKieKey('kie-test-key-0123456789abcd');
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 't', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(appBase + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer rahasia' } } }));
+  const names = (await client.listTools()).tools.map((t) => t.name);
+  assert.ok(names.includes('kie_status') && names.includes('list_kie_models'));
+  assert.match((await client.callTool({ name: 'list_kie_models', arguments: {} })).content[0].text, /google\/nano-banana \|.*4 kredit \(~Rp320\)/);
+  const st = JSON.parse((await client.callTool({ name: 'kie_status', arguments: {} })).content[0].text);
+  assert.equal(st.saldo.credits, 1000);
+  assert.equal(st.saldoRupiah, 80000);
+  assert.ok(!JSON.stringify(st).includes('0123456789abcd'));
+  const est = JSON.parse((await client.callTool({ name: 'estimate_cost', arguments: { provider: 'kie', n: 2 } })).content[0].text);
+  assert.equal(est.provider, 'kie');
+  await client.close();
+  secrets.clearKieKey();
 });

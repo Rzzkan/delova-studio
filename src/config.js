@@ -12,6 +12,21 @@ export const config = {
   host: process.env.HOST || '127.0.0.1',
   kenariBaseUrl: (process.env.KENARI_BASE_URL || 'https://kenari.id/v1').replace(/\/$/, ''),
   kenariApiKey: process.env.KENARI_API_KEY || '',
+  // kie.ai = penyedia CADANGAN: dipakai otomatis bila kenari gagal. Kredit kie dikontrol terpisah (lihat settings).
+  kieBaseUrl: (process.env.KIE_BASE_URL || 'https://api.kie.ai').replace(/\/$/, ''),
+  kieUploadUrl: (process.env.KIE_UPLOAD_URL || 'https://kieai.redpandaai.co').replace(/\/$/, ''),
+  kieApiKey: process.env.KIE_API_KEY || '',
+  kieEnabled: !['0', 'false', 'off'].includes(String(process.env.KIE_ENABLED || '1').toLowerCase()),
+  kieDefaultModel: process.env.KIE_DEFAULT_MODEL || 'google/nano-banana',
+  kieEditModel: process.env.KIE_EDIT_MODEL || 'google/nano-banana-edit',
+  kieDailyCredits: num(process.env.KIE_DAILY_CREDITS, 100),
+  kieWeeklyCredits: num(process.env.KIE_WEEKLY_CREDITS, 0),
+  kieMonthlyCredits: num(process.env.KIE_MONTHLY_CREDITS, 0),
+  kieApprovalThresholdCredits: num(process.env.KIE_APPROVAL_THRESHOLD_CREDITS, 20),
+  kieMinBalance: num(process.env.KIE_MIN_BALANCE, 0),
+  kieCreditIdr: num(process.env.KIE_CREDIT_IDR, 80), // 1 kredit ~ US$0,005 ~ Rp80
+  kiePollMs: num(process.env.KIE_POLL_MS, 3000),
+  kieTimeoutMs: num(process.env.KIE_TIMEOUT_MS, 240000),
   accessToken: process.env.ACCESS_TOKEN || '', // token mesin: dipakai /mcp dan klien API
   // Opsional: rahasia di URL konektor Claude, /mcp/<rahasia>. Hanya membuka MCP (bukan web/API). Min. 24 karakter.
   mcpPathSecret: process.env.MCP_PATH_SECRET || '',

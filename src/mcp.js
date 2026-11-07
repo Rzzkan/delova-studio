@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { config } from './config.js';
 import * as kenari from './kenari.js';
+import * as kie from './kie.js';
 import * as store from './store.js';
 import * as service from './service.js';
 import { ApprovalRequired } from './service.js';
@@ -15,7 +16,10 @@ const fail = (t) => ({ isError: true, content: [text(t)] });
 
 async function result(res, returnImages) {
   const lines = res.images.map((e) => `- ${e.id} | ${e.file} | ${baseUrl()}/files/${encodeURIComponent(e.file)}`);
-  const fb = res.fallbackFrom ? `PERHATIAN: model utama ${res.fallbackFrom} gagal, hasil dibuat dengan model cadangan ${res.modelUsed}. Alasan: ${res.failures.join(' | ')}\n` : '';
+  const viaKie = res.providerUsed === 'kie';
+  const fb = viaKie
+    ? `PERHATIAN: dibuat lewat kie.ai${res.fallbackFrom ? ` karena kenari gagal (model ${res.fallbackFrom})` : ' (dipilih langsung)'}, memakai ${res.credits} kredit (~Rp${res.costIdr}). ${(res.failures || []).join(' | ')}\n`
+    : res.fallbackFrom ? `PERHATIAN: model utama ${res.fallbackFrom} gagal, hasil dibuat dengan model cadangan ${res.modelUsed}. Alasan: ${res.failures.join(' | ')}\n` : '';
   const content = [text(`${fb}Selesai: ${res.images.length} gambar${res.images[0]?.brandName ? ` untuk brand ${res.images[0].brandName}${res.images[0].style ? ` (${res.images[0].style})` : ''}` : ''} dengan ${res.modelUsed}, biaya Rp${res.costIdr}.\n${lines.join('\n')}\nSemua gambar tersimpan di galeri: ${baseUrl()}`)];
   if (returnImages) {
     for (const e of res.images) {
@@ -46,6 +50,7 @@ const common = {
   approved: z.boolean().optional().describe('Isi true HANYA setelah Owner (Aditya) menyetujui biaya yang melewati ambang.'),
   brand: z.string().optional().describe('Nama atau slug brand (lihat list_brands). WAJIB bila ada lebih dari satu brand. Menentukan Style Guide yang dipakai dan label di galeri.'),
   style: z.string().optional().describe('Nama Style Guide content pillar DALAM brand tsb (lihat list_style_guides), ditambahkan di atas gaya dasar brand. Pillar juga membawa model generate + cadangannya sendiri. Kosong = hanya gaya dasar.'),
+  provider: z.enum(['auto', 'kie', 'kenari']).optional().describe('auto (default) = kenari dulu, kie.ai otomatis sebagai cadangan bila kenari gagal. kie = langsung kie.ai (pakai kredit kie; butuh approved=true bila melewati ambang kredit). kenari = tanpa cadangan kie.'),
   return_images: z.boolean().optional().describe('Kirim gambar langsung di respons (default true).'),
 };
 
@@ -63,8 +68,34 @@ export function buildMcpServer() {
 
   server.registerTool(
     'estimate_cost',
-    { description: 'Hitung estimasi biaya + sisa budget harian sebelum generate. Tidak mengeluarkan uang.', inputSchema: { model: common.model, n: common.n } },
-    wrap(async ({ model, n }) => ({ content: [text(JSON.stringify(await service.estimate({ model, n }), null, 2))] })),
+    { description: 'Hitung estimasi biaya + sisa budget harian sebelum generate. Tidak mengeluarkan uang.', inputSchema: { model: common.model, n: common.n, provider: z.enum(['kenari', 'kie']).optional().describe('kie = estimasi dalam kredit kie.ai (cadangan).') } },
+    wrap(async ({ model, n, provider }) => ({ content: [text(JSON.stringify(provider === 'kie' ? await service.estimateKie({ model, n }) : await service.estimate({ model, n }), null, 2))] })),
+  );
+
+  server.registerTool(
+    'kie_status',
+    { description: 'Status cadangan kie.ai: aktif/tidaknya, saldo kredit, pemakaian kredit hari/pekan/bulan ini, batas kredit, dan model default kie. Tidak mengeluarkan uang.', inputSchema: {} },
+    wrap(async () => {
+      const [st, u, check] = await Promise.all([settings.get(), store.usage(), kie.checkKey()]);
+      return { content: [text(JSON.stringify({
+        aktif: st.kieEnabled, siap: await service.kieReady(), saldo: check,
+        saldoRupiah: check.state === 'valid' ? Math.round(check.credits * st.kieCreditIdr) : null,
+        terpakaiKredit: { hariIni: u.kieToday, pekanIni: u.kieWeek, bulanIni: u.kieMonth },
+        terpakaiRupiah: { hariIni: Math.round(u.kieToday * st.kieCreditIdr), pekanIni: Math.round(u.kieWeek * st.kieCreditIdr), bulanIni: Math.round(u.kieMonth * st.kieCreditIdr) },
+        catatan: `Estimasi rupiah: 1 kredit = Rp${st.kieCreditIdr} (US$0,005; ubah di Dashboard > Batas Biaya). Pakai generate_image/edit_image dengan provider="kie" untuk langsung memakai kie.ai.`,
+        batasKredit: { harian: st.kieDailyCredits, mingguan: st.kieWeeklyCredits, bulanan: st.kieMonthlyCredits, ambangPersetujuan: st.kieApprovalThresholdCredits, saldoMinimum: st.kieMinBalance },
+        kreditKeRupiah: st.kieCreditIdr, modelDefault: st.kieDefaultModel, modelEdit: st.kieEditModel,
+      }, null, 2))] };
+    }),
+  );
+
+  server.registerTool(
+    'list_kie_models',
+    { description: 'Daftar model kie.ai (cadangan) beserta harga kredit per gambar dan estimasi rupiahnya. Model default ditandai.', inputSchema: {} },
+    wrap(async () => {
+      const list = await service.kieModels();
+      return { content: [text(list.map((m) => `${m.id} | ${m.name} | ${m.kind} | ${m.credits === null ? 'harga ?' : m.credits + ' kredit (~Rp' + m.priceIdr + ')'}${m.isDefault ? ' | DEFAULT generate' : ''}${m.isEditDefault ? ' | DEFAULT edit' : ''}`).join('\n'))] };
+    }),
   );
 
   server.registerTool(

@@ -5,6 +5,7 @@ import { config } from './config.js';
 import * as store from './store.js';
 import * as service from './service.js';
 import * as kenari from './kenari.js';
+import * as kie from './kie.js';
 import { buildMcpServer } from './mcp.js';
 import { ApprovalRequired } from './service.js';
 import { detectMime } from './kenari.js';
@@ -95,6 +96,12 @@ export function createApp() {
       spentTodayIdr: u.today,
       spentWeekIdr: u.week,
       spentMonthIdr: u.month,
+      spentKieTodayCredits: u.kieToday,
+      spentKieWeekCredits: u.kieWeek,
+      spentKieMonthCredits: u.kieMonth,
+      hasKieKey: secrets.kieKeyInfo().hasKey,
+      kieKeyMasked: secrets.kieKeyInfo().masked,
+      kieKeySource: secrets.kieKeyInfo().source,
       weekStart: u.weekStart,
       monthStart: u.monthStart,
       hasApiKey: secrets.keyInfo().hasKey,
@@ -156,8 +163,46 @@ export function createApp() {
     try { res.json(await kenari.listImageModels({ force: req.query.refresh === '1' })); } catch (e) { next(e); }
   });
   api.get('/estimate', async (req, res, next) => {
-    try { res.json(await service.estimate({ model: req.query.model, n: req.query.n })); } catch (e) { next(e); }
+    try {
+      res.json(req.query.provider === 'kie'
+        ? await service.estimateKie({ model: req.query.model, n: req.query.n, kind: req.query.kind === 'edit' ? 'edit' : 'generate' })
+        : await service.estimate({ model: req.query.model, n: req.query.n }));
+    } catch (e) { next(e); }
   });
+
+  // ---- kie.ai (penyedia cadangan): key, saldo kredit, katalog model ----
+  api.put('/kie/key', adminOnly, async (req, res, next) => {
+    try {
+      const key = String(req.body?.apiKey || '').trim();
+      if (!secrets.KIE_KEY_RE.test(key)) return res.status(400).json({ error: 'Format API key kie.ai tidak valid (16-200 karakter huruf/angka, tanpa spasi).' });
+      const check = await kie.checkKey(key);
+      if (check.state === 'invalid') return res.status(400).json({ error: check.message });
+      secrets.setKieKey(key);
+      res.json({ ...secrets.kieKeyInfo(), check, verified: check.state === 'valid' });
+    } catch (e) { next(e); }
+  });
+  api.delete('/kie/key', adminOnly, (_req, res, next) => {
+    try { secrets.clearKieKey(); res.json(secrets.kieKeyInfo()); } catch (e) { next(e); }
+  });
+  api.post('/kie/test', adminOnly, async (req, res, next) => {
+    try {
+      const cand = req.body?.apiKey ? String(req.body.apiKey).trim() : undefined;
+      if (cand && !secrets.KIE_KEY_RE.test(cand)) return res.status(400).json({ error: 'Format API key kie.ai tidak valid' });
+      res.json(await kie.checkKey(cand));
+    } catch (e) { next(e); }
+  });
+  api.get('/kie/status', async (_req, res, next) => {
+    try {
+      const [st, u, check] = await Promise.all([settings.get(), store.usage(), kie.checkKey()]);
+      res.json({
+        enabled: st.kieEnabled, ready: await service.kieReady(), key: secrets.kieKeyInfo(), balance: check,
+        usage: { todayCredits: u.kieToday, weekCredits: u.kieWeek, monthCredits: u.kieMonth },
+        limits: { dailyCredits: st.kieDailyCredits, weeklyCredits: st.kieWeeklyCredits, monthlyCredits: st.kieMonthlyCredits, approvalThresholdCredits: st.kieApprovalThresholdCredits, minBalanceCredits: st.kieMinBalance },
+        creditIdr: st.kieCreditIdr, defaultModel: st.kieDefaultModel, editModel: st.kieEditModel,
+      });
+    } catch (e) { next(e); }
+  });
+  api.get('/kie/models', async (_req, res, next) => { try { res.json(await service.kieModels()); } catch (e) { next(e); } });
   api.post('/generate', async (req, res, next) => {
     try { res.json(await service.generateImages({ ...req.body, useStyle: req.body.useStyle ?? true, source: 'web' })); } catch (e) { next(e); }
   });
