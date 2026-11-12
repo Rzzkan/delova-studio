@@ -83,7 +83,7 @@ function openLightbox(e) {
 function closeLightbox() { $('#lb').classList.add('hidden'); $('#lb').classList.remove('flex'); }
 
 function pickEdit(e) {
-  editSource = { sourceId: e.id, label: e.file };
+  $('#e-url').value = ''; editSource = { sourceId: e.id, label: e.file };
   $('#e-src').textContent = `Sumber: ${e.file}`;
   closeLightbox();
   location.hash = '#edit';
@@ -641,12 +641,15 @@ async function init() {
   $('#e-file').onchange = async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
     const data = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f); });
-    editSource = { imageBase64: data, label: f.name }; $('#e-src').textContent = `Sumber: ${f.name}`;
+    $('#e-url').value = ''; editSource = { imageBase64: data, label: f.name }; $('#e-src').textContent = `Sumber: ${f.name}`;
   };
   $('#e-go').onclick = () => {
+    const url = $('#e-url').value.trim();
+    if (url) editSource = { imageUrl: url, label: url };
+    else if (editSource?.imageUrl) editSource = null;
     if (!editSource) { $('#e-msg').className = ERR; $('#e-msg').textContent = 'Pilih gambar sumber dulu.'; return; }
     run('e', '/edit', { prompt: $('#e-prompt').value, brand: $('#e-brand').value || undefined, model: $('#e-model').value || undefined, n: Number($('#e-n').value) || 1, title: $('#e-title').value || undefined,
-      sourceId: editSource.sourceId, imageBase64: editSource.imageBase64, approved: $('#e-appr').checked, useStyle: $('#e-style-pick').value !== '__none', style: ['', '__none'].includes($('#e-style-pick').value) ? undefined : $('#e-style-pick').value }, '#e-out');
+      sourceId: editSource.sourceId, imageBase64: editSource.imageBase64, imageUrl: editSource.imageUrl, approved: $('#e-appr').checked, useStyle: $('#e-style-pick').value !== '__none', style: ['', '__none'].includes($('#e-style-pick').value) ? undefined : $('#e-style-pick').value }, '#e-out');
   };
   $('#q').oninput = () => loadGallery();
   $('#gal-brand').onchange = () => loadGallery();

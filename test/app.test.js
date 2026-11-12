@@ -82,6 +82,7 @@ before(async () => {
   process.env.KIE_BASE_URL = kieBase;
   process.env.KIE_UPLOAD_URL = kieBase;
   process.env.KIE_POLL_MS = '10';
+  process.env.ALLOW_PRIVATE_URLS = '1';
   process.env.KIE_DOCS_URL = kieBase;
   process.env.KENARI_BASE_URL = base;
   process.env.KENARI_API_KEY = 'kn-test';
@@ -1039,4 +1040,32 @@ test('kie.ai: daftar model diambil dari dokumentasi, pilihan model fleksibel, in
   await client.close();
   await put({ kieEditModel: 'google/nano-banana-edit', kieModelCredits: {} });
   secrets.clearKieKey();
+});
+
+test('edit dari URL gambar referensi: web & MCP, bukan-gambar/skema salah ditolak, alamat internal diblokir', async () => {
+  const { isPrivateIp, fetchImage } = await import('../src/fetchimage.js');
+  for (const ip of ['127.0.0.1', '10.1.2.3', '192.168.0.9', '172.20.0.1', '169.254.169.254', '::1', '::ffff:127.0.0.1', 'fd00::1']) assert.equal(isPrivateIp(ip), true, ip);
+  for (const ip of ['8.8.8.8', '104.18.0.1', '2606:4700::1']) assert.equal(isPrivateIp(ip), false, ip);
+
+  const r = await post('/api/edit', { prompt: 'dari url', imageUrl: `${kieBase}/files/hasil.png`, brand: 'Teman Seller', model: 'gpt-image-2' });
+  const b = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(b));
+  assert.equal(b.images.length, 1);
+  assert.equal((await post('/api/edit', { prompt: 'x', imageUrl: `${kieBase}/llms.txt`, brand: 'Teman Seller' })).status, 400, 'bukan gambar');
+  assert.equal((await post('/api/edit', { prompt: 'x', imageUrl: 'file:///etc/passwd', brand: 'Teman Seller' })).status, 400);
+  assert.equal((await post('/api/edit', { prompt: 'x', imageUrl: 'bukan url', brand: 'Teman Seller' })).status, 400);
+
+  // pemblokiran SSRF aktif saat mode uji dimatikan
+  process.env.ALLOW_PRIVATE_URLS = '0';
+  await assert.rejects(fetchImage(`${kieBase}/files/hasil.png`), /alamat internal/);
+  await assert.rejects(fetchImage('http://169.254.169.254/latest/meta-data'), /alamat internal/);
+  process.env.ALLOW_PRIVATE_URLS = '1';
+
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const client = new Client({ name: 't', version: '1' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(appBase + '/mcp'), { requestInit: { headers: { Authorization: 'Bearer rahasia' } } }));
+  const out = await client.callTool({ name: 'edit_image', arguments: { prompt: 'dari url mcp', image_url: `${kieBase}/files/hasil.png`, brand: 'Teman Seller', model: 'gpt-image-2', return_images: false } });
+  assert.ok(!out.isError, JSON.stringify(out));
+  await client.close();
 });

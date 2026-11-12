@@ -6,6 +6,7 @@ import * as store from './store.js';
 import * as service from './service.js';
 import * as kenari from './kenari.js';
 import * as kie from './kie.js';
+import { fetchImage } from './fetchimage.js';
 import { buildMcpServer } from './mcp.js';
 import { ApprovalRequired } from './service.js';
 import { detectMime } from './kenari.js';
@@ -211,16 +212,18 @@ export function createApp() {
   });
   api.post('/edit', async (req, res, next) => {
     try {
-      const { sourceId, imageBase64, ...rest } = req.body;
+      const { sourceId, imageBase64, imageUrl, ...rest } = req.body;
       let source;
-      if (sourceId) {
+      if (imageUrl) {
+        source = await fetchImage(imageUrl);
+      } else if (sourceId) {
         const e = await store.getImage(sourceId);
         if (!e) return res.status(404).json({ error: 'Gambar sumber tidak ada' });
         source = { buffer: await store.readImageFile(e.file), mime: e.mime };
       } else if (imageBase64) {
         const buffer = Buffer.from(imageBase64.replace(/^data:[^,]+,/, ''), 'base64');
         source = { buffer, mime: detectMime(buffer) };
-      } else return res.status(400).json({ error: 'Pilih gambar dari galeri atau unggah gambar' });
+      } else return res.status(400).json({ error: 'Pilih gambar dari galeri, unggah gambar, atau isi URL gambar' });
       res.json(await service.editImages({ ...rest, sources: [source], source: 'web' }));
     } catch (e) { next(e); }
   });

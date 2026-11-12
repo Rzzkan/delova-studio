@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { config } from './config.js';
 import * as kenari from './kenari.js';
 import * as kie from './kie.js';
+import { fetchImage } from './fetchimage.js';
 import * as store from './store.js';
 import * as service from './service.js';
 import { ApprovalRequired } from './service.js';
@@ -130,10 +131,11 @@ export function buildMcpServer() {
   server.registerTool(
     'edit_image',
     {
-      description: 'Edit gambar (image-to-image). Sumber: source_id dari galeri, atau image_base64. Mengeluarkan uang, aturan approval sama dengan generate_image.',
+      description: 'Edit gambar (image-to-image). Sumber (pilih salah satu): image_url (URL gambar referensi), source_id dari galeri, atau image_base64. Mengeluarkan uang, aturan approval sama dengan generate_image.',
       inputSchema: {
         prompt: z.string().min(3).describe('Perubahan yang diinginkan.'),
         source_id: z.string().optional().describe('ID gambar di galeri.'),
+        image_url: z.string().optional().describe('URL gambar referensi/sumber (http/https publik, PNG/JPEG/WebP, maks 12 MB). Alamat internal ditolak.'),
         image_base64: z.string().optional().describe('Gambar sumber base64 (PNG/JPEG/WebP) jika bukan dari galeri.'),
         quality: z.enum(['low', 'medium', 'high', 'auto']).optional(),
         ...common,
@@ -141,14 +143,16 @@ export function buildMcpServer() {
     },
     wrap(async (a) => {
       let source;
-      if (a.source_id) {
+      if (a.image_url) {
+        source = await fetchImage(a.image_url);
+      } else if (a.source_id) {
         const e = await store.getImage(a.source_id);
         if (!e) throw new Error(`source_id ${a.source_id} tidak ada di galeri`);
         source = { buffer: await store.readImageFile(e.file), mime: e.mime };
       } else if (a.image_base64) {
         const buffer = Buffer.from(a.image_base64.replace(/^data:[^,]+,/, ''), 'base64');
         source = { buffer, mime: kenari.detectMime(buffer) };
-      } else throw new Error('Isi source_id atau image_base64');
+      } else throw new Error('Isi image_url, source_id, atau image_base64');
       return result(await service.editImages({ ...a, sources: [source], source: 'mcp' }), a.return_images ?? true);
     }),
   );
